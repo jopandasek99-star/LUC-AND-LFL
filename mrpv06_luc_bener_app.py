@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="MRP App - MCP & LUC Final", layout="wide")
+st.set_page_config(page_title="APP PERHITUNGAN LFL dan LUC", layout="wide")
 st.title("MRP App – Logika Biaya Simpan & Lead Time Terkoreksi")
 
 # Sidebar parameters
