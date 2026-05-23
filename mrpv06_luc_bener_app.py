@@ -26,7 +26,7 @@ def calculate_net_requirements(df, init_inv, ss):
     return net_req_list
 
 # Fungsi untuk mewarnai baris yang biayanya naik
-def highlight_cost_increase(row, crit_col):
+def highlight_cost_increase(row):
     if row['Is_Higher']:
         return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
     return [''] * len(row)
@@ -79,7 +79,7 @@ for idx, method in enumerate(["MCP", "LUC"]):
                         "Lot Size": current_lot_size,
                         "Total Cost": total_cost,
                         label_crit: round(crit_val, 2),
-                        "Is_Higher": is_higher
+                        "Is_Higher": is_higher # Tetap disimpan untuk logic styling
                     })
 
                     if not is_higher:
@@ -102,14 +102,19 @@ for idx, method in enumerate(["MCP", "LUC"]):
                 else:
                     i += 1
 
-            # 1. Tabel Iterasi dengan Styling
+            # 1. Tabel Iterasi dengan Styling (Kolom Is_Higher Dihapus dari Tampilan)
             st.markdown("### All Iterations Tested")
-            st.write("> **Note:** Baris berwarna merah (⚠️) menunjukkan kombinasi yang mulai tidak ekonomis (biaya meningkat).")
+            st.write("> **Note:** Baris berwarna merah (⚠️) menunjukkan kombinasi yang mulai tidak ekonomis.")
             df_iter = pd.DataFrame(all_iterations)
             
-            # Apply styling
-            styled_iter = df_iter.style.apply(highlight_cost_increase, crit_col=label_crit, axis=1)
-            st.dataframe(styled_iter.hide(axis="index").set_properties(**{'text-align': 'left'}), use_container_width=True)
+            # Apply styling dan sembunyikan kolom Is_Higher
+            styled_iter = df_iter.style.apply(highlight_cost_increase, axis=1)
+            # Menghapus kolom Is_Higher dari visualisasi dataframe
+            st.dataframe(
+                styled_iter.hide(axis="index").set_properties(**{'text-align': 'left'}), 
+                use_container_width=True,
+                column_order=("Range", "Lot Size", "Total Cost", label_crit) # Memaksa urutan tanpa Is_Higher
+            )
             
             # 2. Tabel Rangkuman
             st.markdown("---")
