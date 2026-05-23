@@ -25,6 +25,12 @@ def calculate_net_requirements(df, init_inv, ss):
         projected_inv = projected_inv + nr + sch_rec[k] - gross_req[k]
     return net_req_list
 
+# Fungsi untuk mewarnai baris yang biayanya naik
+def highlight_cost_increase(row, crit_col):
+    if row['Is_Higher']:
+        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
+    return [''] * len(row)
+
 tabs = st.tabs(["MCP Cumulative", "Least Unit Cost (LUC)"])
 
 for idx, method in enumerate(["MCP", "LUC"]):
@@ -48,13 +54,13 @@ for idx, method in enumerate(["MCP", "LUC"]):
                 
                 best_val = float('inf')
                 best_lot = None
+                prev_crit_val = None
                 
                 for j in range(i, periods):
                     current_lot_size = sum(net_req_list[i:j+1])
                     holding_costs = sum(net_req_list[k] * (k - i) * holding_cost for k in range(i, j+1))
                     total_cost = setup_cost + holding_costs
                     
-                    # Penentuan Kriteria
                     if method == "MCP":
                         crit_val = total_cost / (j - i + 1)
                         label_crit = "Cost per Period"
@@ -62,18 +68,21 @@ for idx, method in enumerate(["MCP", "LUC"]):
                         crit_val = total_cost / current_lot_size if current_lot_size > 0 else float('inf')
                         label_crit = "Unit Cost"
                     
-                    # Format Range: P1, P2, P3...
-                    range_labels = [f"P{k+1}" for k in range(i, j+1)]
-                    range_str = ", ".join(range_labels)
+                    is_higher = False
+                    if prev_crit_val is not None and crit_val > prev_crit_val:
+                        is_higher = True
+                    
+                    range_str = ", ".join([f"P{k+1}" for k in range(i, j+1)])
                     
                     all_iterations.append({
-                        "Range": range_str,
+                        "Range": f"⚠️ {range_str}" if is_higher else range_str,
                         "Lot Size": current_lot_size,
                         "Total Cost": total_cost,
-                        label_crit: round(crit_val, 2)
+                        label_crit: round(crit_val, 2),
+                        "Is_Higher": is_higher
                     })
 
-                    if crit_val <= best_val:
+                    if not is_higher:
                         best_val = crit_val
                         best_lot = {
                             "Order Period": i + 1,
@@ -83,8 +92,9 @@ for idx, method in enumerate(["MCP", "LUC"]):
                             "Total Cost": total_cost,
                             "End_Idx": j
                         }
+                        prev_crit_val = crit_val
                     else:
-                        break
+                        break # Stop iterasi karena biaya mulai naik
                 
                 if best_lot:
                     final_solution.append(best_lot)
@@ -92,27 +102,25 @@ for idx, method in enumerate(["MCP", "LUC"]):
                 else:
                     i += 1
 
-            # 1. Tabel Iterasi
+            # 1. Tabel Iterasi dengan Styling
             st.markdown("### All Iterations Tested")
-            st.dataframe(pd.DataFrame(all_iterations), use_container_width=True)
+            st.write("> **Note:** Baris berwarna merah (⚠️) menunjukkan kombinasi yang mulai tidak ekonomis (biaya meningkat).")
+            df_iter = pd.DataFrame(all_iterations)
             
-            # 2. Tabel Rangkuman Solusi Terbaik (Urutan Kolom Sesuai Instruksi)
+            # Apply styling
+            styled_iter = df_iter.style.apply(highlight_cost_increase, crit_col=label_crit, axis=1)
+            st.dataframe(styled_iter.hide(axis="index").set_properties(**{'text-align': 'left'}), use_container_width=True)
+            
+            # 2. Tabel Rangkuman
+            st.markdown("---")
             st.markdown("### Optimal Strategy Summary")
             df_res = pd.DataFrame(final_solution)
             if not df_res.empty:
-                # Format tampilan periode
                 df_res['Release At'] = df_res['Release Period'].apply(lambda x: f"P{x}" if x > 0 else "PAST DUE")
                 df_res['Order At'] = df_res['Order Period'].apply(lambda x: f"P{x}")
                 
-                # Urutan kolom: Periods Covered -> Release At -> Order At
                 display_cols = ['Periods Covered', 'Release At', 'Order At', 'Lot Size', 'Total Cost']
                 st.table(df_res[display_cols])
                 
-                # 3. Total Cost Akhir
                 grand_total = df_res['Total Cost'].sum()
-                st.metric("Grand Total Cost for this Solution", f"{grand_total:,.2f}")
-            
-            # Download
-            csv_buffer = BytesIO()
-            df_res.to_csv(csv_buffer, index=False)
-            st.download_button(f"Download {method} Solution", data=csv_buffer.getvalue(), file_name=f"{method}_solution.csv")
+                st.metric("Grand Total Cost", f"{grand_total:,.2f}")
