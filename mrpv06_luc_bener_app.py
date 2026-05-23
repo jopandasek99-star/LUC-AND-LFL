@@ -3,7 +3,7 @@ import pandas as pd
 from io import BytesIO
 
 st.set_page_config(page_title="APP PERHITUNGAN LFL dan LUC", layout="wide")
-st.title("MRP App – Logika Biaya Simpan & Lead Time Terkoreksi")
+st.title("APP PERHITUNGAN LFL dan LUC- by Jo and Sam ELITE")
 
 # Sidebar parameters
 st.sidebar.header("Parameters")
