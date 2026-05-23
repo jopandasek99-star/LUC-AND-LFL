@@ -104,7 +104,7 @@ for idx, method in enumerate(["MCP", "LUC"]):
 
             # 1. Tabel Iterasi dengan Styling (Kolom Is_Higher Dihapus dari Tampilan)
             st.markdown("### All Iterations Tested")
-            st.write("> **Note:** Baris berwarna merah (⚠️) menunjukkan kombinasi yang mulai tidak ekonomis.")
+            st.write("> **Note:** Baris berwarna merah (⚠️) menunjukkan kombinasi yang tidak ekonomis.")
             df_iter = pd.DataFrame(all_iterations)
             
             # Apply styling dan sembunyikan kolom Is_Higher
