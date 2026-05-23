@@ -62,7 +62,7 @@ for idx, method in enumerate(["MCP", "LUC"]):
                         crit_val = total_cost / current_lot_size if current_lot_size > 0 else float('inf')
                         label_crit = "Unit Cost"
                     
-                    # Format Range: P1 atau P1, P2, P3
+                    # Format Range: P1, P2, P3...
                     range_labels = [f"P{k+1}" for k in range(i, j+1)]
                     range_str = ", ".join(range_labels)
                     
@@ -92,24 +92,25 @@ for idx, method in enumerate(["MCP", "LUC"]):
                 else:
                     i += 1
 
-            # 1. Tabel Iterasi (Tanpa Kolom Step)
+            # 1. Tabel Iterasi
             st.markdown("### All Iterations Tested")
             st.dataframe(pd.DataFrame(all_iterations), use_container_width=True)
             
-            # 2. Tabel Rangkuman Solusi Terbaik
+            # 2. Tabel Rangkuman Solusi Terbaik (Urutan Kolom Sesuai Instruksi)
             st.markdown("### Optimal Strategy Summary")
             df_res = pd.DataFrame(final_solution)
             if not df_res.empty:
-                # Format tampilan periode rilis (Lead Time)
+                # Format tampilan periode
                 df_res['Release At'] = df_res['Release Period'].apply(lambda x: f"P{x}" if x > 0 else "PAST DUE")
                 df_res['Order At'] = df_res['Order Period'].apply(lambda x: f"P{x}")
                 
-                display_cols = ['Order At', 'Release At', 'Periods Covered', 'Lot Size', 'Total Cost']
+                # Urutan kolom: Periods Covered -> Release At -> Order At
+                display_cols = ['Periods Covered', 'Release At', 'Order At', 'Lot Size', 'Total Cost']
                 st.table(df_res[display_cols])
                 
                 # 3. Total Cost Akhir
                 grand_total = df_res['Total Cost'].sum()
-                st.metric("Grand Total Cost for this Solution", f"{grand_total:,}")
+                st.metric("Grand Total Cost for this Solution", f"{grand_total:,.2f}")
             
             # Download
             csv_buffer = BytesIO()
