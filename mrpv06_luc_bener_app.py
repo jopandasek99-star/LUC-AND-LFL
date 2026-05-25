@@ -32,6 +32,19 @@ def dapatkan_kolom_cocok(columns, targets):
             return col
     return None
 
+def format_lokal_id(angka, is_desimal=False):
+    """Mengubah format angka: Titik untuk ribuan, Koma untuk desimal"""
+    if is_desimal:
+        # Menghapus nol tak terpakai di ujung desimal agar tidak ngerumpi
+        string_angka = f"{angka:f}".rstrip('0').rstrip('.') if '.' in f"{angka:f}" else f"{angka}"
+        if '.' in string_angka:
+            bagian_bulat, bagian_desimal = string_angka.split('.')
+            bagian_bulat = f"{int(bagian_bulat):,}".replace(",", ".")
+            return f"{bagian_bulat},{bagian_desimal}"
+        return f"{int(string_angka):,}".replace(",", ".")
+    else:
+        return f"{int(round(angka)):,}".replace(",", ".")
+
 def highlight_luc_warning(row):
     if row['Is_Higher_Internal']:
         return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
@@ -135,8 +148,8 @@ if df_kerja is not None:
             all_luc_iterations.append({
                 "Periode": display_label, 
                 "Lot Size": int(current_lot), 
-                "Total Cost": round(total_c), 
-                "Unit Cost": round(crit_val, 2),
+                "Total Cost": format_lokal_id(total_c), 
+                "Unit Cost": format_lokal_id(round(crit_val, 2), is_desimal=True),
                 "Is_Higher_Internal": is_higher
             })
             
@@ -175,7 +188,7 @@ if df_kerja is not None:
     best_m = min(biaya_dict, key=biaya_dict.get)
     cols = st.columns(3)
     for i, (name, val) in enumerate(biaya_dict.items()):
-        cols[i].metric(f"TOTAL BIAYA {name}", f"{val:,.0f}", delta="Terbaik" if name == best_m else None)
+        cols[i].metric(f"TOTAL BIAYA {name}", format_lokal_id(val), delta="Terbaik" if name == best_m else None)
 
     t_l4l, t_luc, t_eoq = st.tabs(["METODE L4L", "METODE LUC", "METODE EOQ"])
 
@@ -186,7 +199,7 @@ if df_kerja is not None:
     with t_l4l:
         st.markdown("**TABEL MRP: LOT-FOR-LOT**")
         render_mrp(l4l_poh, l4l_rec, l4l_rel)
-        st.markdown(f"### > **TOTAL BIAYA L4L:** `{total_l4l:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA L4L:** `{format_lokal_id(total_l4l)}`")
 
     with t_luc:
         st.markdown("**ITERASI PERHITUNGAN LEAST UNIT COST**")
@@ -200,14 +213,14 @@ if df_kerja is not None:
         )
         st.markdown("**TABEL MRP: LEAST UNIT COST**")
         render_mrp(luc_poh, luc_rec, luc_rel)
-        st.markdown(f"### > **TOTAL BIAYA LUC:** `{total_luc:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA LUC:** `{format_lokal_id(total_luc)}`")
 
     with t_eoq:
         st.markdown("**PARAMETER EOQ**")
         st.info(f"Fixed Lot Size: {eoq_size} unit")
         st.markdown("**TABEL MRP: ECONOMIC ORDER QUANTITY**")
         render_mrp(eoq_poh, eoq_rec, eoq_rel)
-        st.markdown(f"### > **TOTAL BIAYA EOQ:** `{total_eoq:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA EOQ:** `{format_lokal_id(total_eoq)}`")
 
     # ==========================================
     # 5. EXPORT SECTION
