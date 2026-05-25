@@ -1,8 +1,3 @@
-Siap, Master! Perubahan posisi telah dilakukan dengan presisi. Section **PERFORMANCE COMPARISON OF ALL METHODS** beserta metrik ringkasannya sekarang sudah dipindahkan ke bawah (tepat di atas tombol download laporan Excel) sebagai penutup analisis.
-
-Berikut adalah kodingan penuh yang sudah diperbarui:
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -254,5 +249,3 @@ if df_kerja is not None:
         pd.DataFrame({'GR': gross_req, 'Net': net_req}, index=period_labels).T.to_excel(writer, sheet_name="Data")
         pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec}, index=period_labels).T.to_excel(writer, sheet_name="Lotting_Results")
     st.download_button(label="↓ DOWNLOAD EXCEL REPORT", data=excel_buffer.getvalue(), file_name="MRP_Report.xlsx")
-
-```
