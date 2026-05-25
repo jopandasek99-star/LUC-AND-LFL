@@ -1,3 +1,8 @@
+Siap, Master! Perubahan posisi telah dilakukan dengan presisi. Section **PERFORMANCE COMPARISON OF ALL METHODS** beserta metrik ringkasannya sekarang sudah dipindahkan ke bawah (tepat di atas tombol download laporan Excel) sebagai penutup analisis.
+
+Berikut adalah kodingan penuh yang sudah diperbarui:
+
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,7 +20,7 @@ l4l_help = "LOT-FOR-LOT (L4L): A lotting technique that orders exactly what is n
 luc_help = "LEAST UNIT COST (LUC): A dynamic lotting method that groups successive periods together as long as the average cost per unit decreases."
 eoq_help = "ECONOMIC ORDER QUANTITY (EOQ): A fixed lot-sizing model that balances setup costs and holding costs based on average demand to find the optimal order size."
 
-# Render text with interactive tooltips via columns or help tags
+# Render text with interactive tooltips via columns
 st.markdown("##### DECISION SUPPORT SYSTEM MODULE")
 col_info = st.columns(3)
 with col_info[0]:
@@ -193,16 +198,9 @@ if df_kerja is not None:
     total_eoq = (sum(1 for x in eoq_rec if x > 0) * setup_cost) + (sum(eoq_poh) * holding_cost)
 
     # ==========================================
-    # 4. DASHBOARD RESULTS
+    # 4. METHOD DETAILS (TABS)
     # ==========================================
     st.markdown("---")
-    st.subheader("PERFORMANCE COMPARISON OF ALL METHODS")
-    biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq}
-    best_m = min(biaya_dict, key=biaya_dict.get)
-    cols = st.columns(3)
-    for i, (name, val) in enumerate(biaya_dict.items()):
-        cols[i].metric(f"TOTAL COST {name}", format_lokal_id(val), delta="Optimal Solution" if name == best_m else None)
-
     t_l4l, t_luc, t_eoq = st.tabs(["L4L METHOD", "LUC METHOD", "EOQ METHOD"])
 
     def render_mrp(poh, rec, rel):
@@ -236,7 +234,18 @@ if df_kerja is not None:
         st.markdown(f"### > **TOTAL COST EOQ:** `{format_lokal_id(total_eoq)}`")
 
     # ==========================================
-    # 5. EXPORT SECTION
+    # 5. PERFORMANCE COMPARISON (MOVED HERE)
+    # ==========================================
+    st.markdown("---")
+    st.subheader("PERFORMANCE COMPARISON OF ALL METHODS")
+    biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq}
+    best_m = min(biaya_dict, key=biaya_dict.get)
+    cols = st.columns(3)
+    for i, (name, val) in enumerate(biaya_dict.items()):
+        cols[i].metric(f"TOTAL COST {name}", format_lokal_id(val), delta="Optimal Solution" if name == best_m else None)
+
+    # ==========================================
+    # 6. EXPORT SECTION
     # ==========================================
     st.markdown("---")
     st.subheader("EXPORT MULTI-METHOD REPORT")
@@ -245,3 +254,5 @@ if df_kerja is not None:
         pd.DataFrame({'GR': gross_req, 'Net': net_req}, index=period_labels).T.to_excel(writer, sheet_name="Data")
         pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec}, index=period_labels).T.to_excel(writer, sheet_name="Lotting_Results")
     st.download_button(label="↓ DOWNLOAD EXCEL REPORT", data=excel_buffer.getvalue(), file_name="MRP_Report.xlsx")
+
+```
