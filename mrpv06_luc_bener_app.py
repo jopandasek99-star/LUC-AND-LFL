@@ -1,20 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import math
 from io import BytesIO
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN & STYLE
+# 1. KONFIGURASI HALAMAN
 # ==========================================
-st.set_page_config(page_title="MRP System - Enterprise Edition", layout="wide")
+st.set_page_config(page_title="MRP System", layout="wide")
 st.title("SISTEM PERENCANAAN KEBUTUHAN MATERIAL (MRP)")
 st.caption("Modul Decision Support System: L4L, LUC, EOQ, dan PPB")
 st.markdown("---")
 
 # ==========================================
-# 2. SIDEBAR - PARAMETER
+# 2. SIDEBAR - PARAMETER (KAPASITAS DIHAPUS)
 # ==========================================
 st.sidebar.header("PARAMETER INPUT")
 setup_cost = st.sidebar.number_input("Ordering / Setup Cost (S) (Rp)", min_value=0.0, value=100000.0, step=5000.0)
@@ -22,10 +21,6 @@ holding_cost = st.sidebar.number_input("Holding Cost (H) (Rp / unit / periode)",
 initial_inventory = st.sidebar.number_input("Persediaan Awal", min_value=0, value=30, step=5)
 safety_stock = st.sidebar.number_input("Safety Stock", min_value=0, value=0, step=1)
 lead_time = st.sidebar.number_input("Lead Time (Periode)", min_value=0, value=1, step=1)
-
-st.sidebar.markdown("---")
-st.sidebar.header("BATASAN OPERASIONAL")
-max_capacity = st.sidebar.number_input("Kapasitas Maksimum Gudang (Unit)", min_value=1, value=100, step=10)
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -37,12 +32,10 @@ def dapatkan_kolom_cocok(columns, targets):
             return col
     return None
 
-def get_styled_mrp_table(df_mrp_transposed, max_cap):
-    def highlight_row_capacity(row):
-        if row.name == 'Projected On Hand':
-            return ['background-color: #fff3e0; color: #e65100; font-weight: bold;' if val > max_cap else '' for val in row]
-        return [''] * len(row)
-    return df_mrp_transposed.style.apply(highlight_row_capacity, axis=1)
+def highlight_luc_warning(row):
+    if row['Is_Higher']:
+        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
+    return [''] * len(row)
 
 def calculate_net_requirements(gross_req, sched_rec, init_inv, ss):
     periods = len(gross_req)
@@ -76,22 +69,14 @@ def generate_poh_and_release(rec_lot, demands, s_receipts, init_inv, lt):
 # 3. DATA INPUT SECTION
 # ==========================================
 st.subheader("DATA KEBUTUHAN KOTOR DAN PENERIMAAN TERJADWAL")
-input_method = st.radio(
-    "Metode Input Data:", 
-    ["Upload File", "Input Manual", "Template Data"],
-    horizontal=True
-)
+input_method = st.radio("Metode Input Data:", ["Upload File", "Input Manual", "Template Data"], horizontal=True)
 
 df_kerja = None
-
 if input_method == "Upload File":
     uploaded_file = st.file_uploader("Pilih file (xlsx, csv)", type=["csv", "xlsx", "xls"])
     if uploaded_file is not None:
         try:
-            if uploaded_file.name.endswith('.csv'):
-                df_raw = pd.read_csv(uploaded_file)
-            else:
-                df_raw = pd.read_excel(uploaded_file)
+            df_raw = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             col_periode = dapatkan_kolom_cocok(df_raw.columns, ['periode', 'minggu', 'p'])
             col_gr = dapatkan_kolom_cocok(df_raw.columns, ['gr', 'grossrequirement', 'kebutuhankotor'])
             col_sr = dapatkan_kolom_cocok(df_raw.columns, ['sr', 'scheduledreceipt', 'penerimaanterjadwal'])
@@ -99,20 +84,13 @@ if input_method == "Upload File":
             df_kerja['Periode'] = df_raw[col_periode].astype(str) if col_periode else [f"P{i+1}" for i in range(len(df_raw))]
             df_kerja['Gross Requirements'] = df_raw[col_gr].fillna(0).astype(int) if col_gr else 0
             df_kerja['Scheduled Receipts'] = df_raw[col_sr].fillna(0).astype(int) if col_sr else 0
-        except Exception as e:
-            st.error(f"Error pembacaan file: {e}")
-            
+        except: st.error("Error pembacaan file.")
 elif input_method == "Input Manual":
     num_periods_input = st.number_input("Jumlah Periode:", min_value=1, max_value=52, value=8)
     init_data = {'Periode': [f"P{i+1}" for i in range(num_periods_input)], 'Gross Requirements': [0]*num_periods_input, 'Scheduled Receipts': [0]*num_periods_input}
     df_kerja = st.data_editor(pd.DataFrame(init_data), use_container_width=True, hide_index=True)
-
 else:
-    df_kerja = pd.DataFrame({
-        'Periode': [f"P{i}" for i in range(1, 9)],
-        'Gross Requirements': [30, 40, 20, 70, 40, 10, 30, 60],
-        'Scheduled Receipts': [0, 10, 0, 0, 20, 0, 0, 0]
-    })
+    df_kerja = pd.DataFrame({'Periode': [f"P{i}" for i in range(1, 9)], 'Gross Requirements': [30, 40, 20, 70, 40, 10, 30, 60], 'Scheduled Receipts': [0, 10, 0, 0, 20, 0, 0, 0]})
 
 if df_kerja is not None:
     gross_req = df_kerja['Gross Requirements'].tolist()
@@ -122,38 +100,38 @@ if df_kerja is not None:
     net_req = calculate_net_requirements(gross_req, sched_rec, initial_inventory, safety_stock)
 
     st.markdown("**PREVIEW RINGKASAN DATA INPUT**")
-    df_prev = pd.DataFrame({'Gross Requirements': gross_req, 'Scheduled Receipts': sched_rec}, index=period_labels).T
-    st.dataframe(df_prev, use_container_width=True)
+    st.dataframe(pd.DataFrame({'Gross Requirements': gross_req, 'Scheduled Receipts': sched_rec}, index=period_labels).T, use_container_width=True)
 
     # ==========================================
     # LOGIKA PERHITUNGAN
     # ==========================================
-    
     # 1. L4L
     l4l_rec = list(net_req)
     l4l_poh, l4l_rel = generate_poh_and_release(l4l_rec, gross_req, sched_rec, initial_inventory, lead_time)
     total_l4l = (sum(1 for x in l4l_rec if x > 0) * setup_cost) + (sum(l4l_poh) * holding_cost)
 
-    # 2. LUC
+    # 2. LUC (Master Logic with Highlight)
     luc_rec = [0] * num_periods
-    all_luc_iterations, final_luc_solution = [], []
+    all_luc_iterations = []
     i = 0
     while i < num_periods:
         if net_req[i] <= 0:
             i += 1
             continue
-        best_val, best_lot, prev_crit_val = float('inf'), None, None
+        best_lot, prev_crit_val = None, None
         for j in range(i, num_periods):
             current_lot = sum(net_req[i:j+1])
             h_cost = sum(net_req[k] * (k - i) * holding_cost for k in range(i, j+1))
             total_c = setup_cost + h_cost
             crit_val = total_c / current_lot if current_lot > 0 else float('inf')
             is_higher = True if (prev_crit_val is not None and crit_val > prev_crit_val) else False
-            range_str = f"P{i+1}-P{j+1}"
-            all_luc_iterations.append({"Range": range_str, "Lot Size": current_lot, "Total Cost": total_c, "Unit Cost": round(crit_val, 2), "Is_Higher": is_higher})
+            
+            range_label = f"P{i+1}-P{j+1}"
+            all_luc_iterations.append({"Range": f"⚠️ {range_label}" if is_higher else range_label, "Lot Size": current_lot, "Total Cost": total_c, "Unit Cost": round(crit_val, 2), "Is_Higher": is_higher})
+            
             if not is_higher:
-                best_val, prev_crit_val = crit_val, crit_val
-                best_lot = {"Range": range_str, "Order At": i+1, "Lot Size": current_lot, "End_Idx": j}
+                best_lot = {"Lot Size": current_lot, "End_Idx": j}
+                prev_crit_val = crit_val
             else: break
         if best_lot:
             luc_rec[i] = best_lot["Lot Size"]
@@ -187,12 +165,11 @@ if df_kerja is not None:
         for k in range(idx_p, num_periods):
             acc_d += net_req[k]
             acc_h += net_req[k] * holding_cost * (k - idx_p)
-            diff = abs(setup_cost - acc_h)
             if acc_h <= setup_cost:
                 best_k = k
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Biaya Simpan': acc_h, 'Status': 'Optimal'})
+                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': acc_h, 'Status': 'Ekonomis'})
             else:
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Biaya Simpan': acc_h, 'Status': 'Limit Terlampaui'})
+                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': acc_h, 'Status': 'Stop'})
                 break
         ppb_iters.append(pd.DataFrame(t_log))
         ppb_rec[idx_p] = sum(net_req[idx_p:best_k+1])
@@ -205,73 +182,51 @@ if df_kerja is not None:
     # ==========================================
     st.markdown("---")
     st.subheader("HASIL KOMPARASI PERFORMA ALL METODE")
-    
     biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq, 'PPB': total_ppb}
     best_m = min(biaya_dict, key=biaya_dict.get)
-    
     cols = st.columns(4)
     for i, (name, val) in enumerate(biaya_dict.items()):
-        status_text = "SOLUSI TERBAIK" if name == best_m else ""
-        cols[i].markdown(f"""
-        <div style='background-color: #f8f9fa; padding: 12px; border-radius: 4px; border-top: 3px solid #333;'>
-            <small style='color: #888;'>TOTAL BIAYA {name}</small><br>
-            <span style='font-size: 18px; font-weight: bold;'>Rp {val:,.0f}</span><br>
-            <small style='color: #2e7d32; font-weight: bold;'>{status_text}</small>
-        </div>
-        """, unsafe_allow_html=True)
+        cols[i].metric(f"TOTAL BIAYA {name}", f"Rp {val:,.0f}", delta="Terbaik" if name == best_m else None)
 
-    # TABS (Tanpa Tab Grafik sesuai permintaan)
     t_l4l, t_luc, t_eoq, t_ppb = st.tabs(["METODE L4L", "METODE LUC", "METODE EOQ", "METODE PPB"])
 
     def render_mrp(poh, rec, rel):
-        df = pd.DataFrame({
-            'Gross Requirements': gross_req,
-            'Scheduled Receipts': sched_rec,
-            'Projected On Hand': poh,
-            'Net Requirements': net_req,
-            'Planned Order Receipts': rec,
-            'Planned Order Releases': rel
-        }, index=period_labels).T
-        st.dataframe(get_styled_mrp_table(df, max_capacity), use_container_width=True)
+        df = pd.DataFrame({'Gross Requirements': gross_req, 'Scheduled Receipts': sched_rec, 'Projected On Hand': poh, 'Net Requirements': net_req, 'Planned Order Receipts': rec, 'Planned Order Releases': rel}, index=period_labels).T
+        st.dataframe(df, use_container_width=True)
 
     with t_l4l:
         st.markdown("**TABEL MRP: LOT-FOR-LOT**")
         render_mrp(l4l_poh, l4l_rec, l4l_rel)
+        st.write(f"**Total Biaya L4L:** Rp {total_l4l:,.0f}")
 
     with t_luc:
         st.markdown("**ITERASI PERHITUNGAN LEAST UNIT COST**")
+        st.write("> **Catatan:** Baris merah (⚠️) menunjukkan biaya unit mulai naik, sistem berhenti menggabungkan periode.")
         df_luc_view = pd.DataFrame(all_luc_iterations)
-        st.dataframe(df_luc_view[['Range', 'Lot Size', 'Total Cost', 'Unit Cost']], use_container_width=True, hide_index=True)
+        st.dataframe(df_luc_view.style.apply(highlight_luc_warning, axis=1), use_container_width=True, hide_index=True)
         st.markdown("**TABEL MRP: LEAST UNIT COST**")
         render_mrp(luc_poh, luc_rec, luc_rel)
+        st.write(f"**Total Biaya LUC:** Rp {total_luc:,.0f}")
 
     with t_eoq:
         st.markdown("**PARAMETER EOQ**")
         st.info(f"Fixed Lot Size: {eoq_size} unit")
         st.markdown("**TABEL MRP: ECONOMIC ORDER QUANTITY**")
         render_mrp(eoq_poh, eoq_rec, eoq_rel)
+        st.write(f"**Total Biaya EOQ:** Rp {total_eoq:,.0f}")
 
     with t_ppb:
         st.markdown("**DETAIL PENYEIMBANGAN PART-PERIOD**")
         for i, df_p in enumerate(ppb_iters):
-            with st.expander(f"Iterasi Pembentukan Lot {i+1}"):
-                st.table(df_p)
+            with st.expander(f"Iterasi Lot {i+1}"): st.table(df_p)
         st.markdown("**TABEL MRP: PART PERIOD BALANCING**")
         render_mrp(ppb_poh, ppb_rec, ppb_rel)
+        st.write(f"**Total Biaya PPB:** Rp {total_ppb:,.0f}")
 
-    # ==========================================
-    # 5. EXPORT SECTION
-    # ==========================================
     st.markdown("---")
     st.subheader("EKSPOR LAPORAN MULTI-METODE")
-    
     excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        pd.DataFrame({'GR': gross_req, 'Net': net_req}, index=period_labels).T.to_excel(writer, sheet_name="Input")
-        pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec, 'PPB': ppb_rec}, index=period_labels).T.to_excel(writer, sheet_name="Hasil_Lotting")
-    
-    st.download_button(
-        label="↓ DOWNLOAD LAPORAN EXCEL", 
-        data=excel_buffer.getvalue(), 
-        file_name="Laporan_MRP_Final.xlsx"
-    )
+        pd.DataFrame({'GR': gross_req, 'Net': net_req}, index=period_labels).T.to_excel(writer, sheet_name="Data")
+        pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec, 'PPB': ppb_rec}, index=period_labels).T.to_excel(writer, sheet_name="Hasil_Lot")
+    st.download_button(label="↓ DOWNLOAD LAPORAN EXCEL", data=excel_buffer.getvalue(), file_name="Laporan_MRP.xlsx")
