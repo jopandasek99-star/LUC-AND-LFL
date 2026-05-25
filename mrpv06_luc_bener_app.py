@@ -13,7 +13,7 @@ st.caption("Modul Decision Support System: L4L, LUC, EOQ, dan PPB")
 st.markdown("---")
 
 # ==========================================
-# 2. SIDEBAR - PARAMETER (KAPASITAS DIHAPUS)
+# 2. SIDEBAR - PARAMETER
 # ==========================================
 st.sidebar.header("PARAMETER INPUT")
 setup_cost = st.sidebar.number_input("Ordering / Setup Cost (S) (Rp)", min_value=0.0, value=100000.0, step=5000.0)
@@ -33,9 +33,9 @@ def dapatkan_kolom_cocok(columns, targets):
     return None
 
 def highlight_luc_warning(row):
-    if row['Is_Higher']:
-        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
-    return [''] * len(row)
+    if row['Is_Higher_Internal']:
+        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * (len(row) - 1)
+    return [''] * (len(row) - 1)
 
 def calculate_net_requirements(gross_req, sched_rec, init_inv, ss):
     periods = len(gross_req)
@@ -110,7 +110,7 @@ if df_kerja is not None:
     l4l_poh, l4l_rel = generate_poh_and_release(l4l_rec, gross_req, sched_rec, initial_inventory, lead_time)
     total_l4l = (sum(1 for x in l4l_rec if x > 0) * setup_cost) + (sum(l4l_poh) * holding_cost)
 
-    # 2. LUC (Master Logic with Highlight)
+    # 2. LUC (Custom Formatting Logic)
     luc_rec = [0] * num_periods
     all_luc_iterations = []
     i = 0
@@ -126,8 +126,20 @@ if df_kerja is not None:
             crit_val = total_c / current_lot if current_lot > 0 else float('inf')
             is_higher = True if (prev_crit_val is not None and crit_val > prev_crit_val) else False
             
-            range_label = f"P{i+1}-P{j+1}"
-            all_luc_iterations.append({"Range": f"⚠️ {range_label}" if is_higher else range_label, "Lot Size": current_lot, "Total Cost": total_c, "Unit Cost": round(crit_val, 2), "Is_Higher": is_higher})
+            # Format nama periode sesuai instruksi (P1 atau P1, P2, P3)
+            if i == j:
+                range_label = f"P{i+1}"
+            else:
+                range_label = ", ".join([f"P{x}" for x in range(i+1, j+2)])
+                
+            display_label = f"⚠️ {range_label}" if is_higher else range_label
+            all_luc_iterations.append({
+                "Periode": display_label, 
+                "Lot Size": int(current_lot), 
+                "Total Cost": round(total_c), 
+                "Unit Cost": round(crit_val, 2),
+                "Is_Higher_Internal": is_higher # Hidden helper column for style
+            })
             
             if not is_higher:
                 best_lot = {"Lot Size": current_lot, "End_Idx": j}
@@ -167,9 +179,9 @@ if df_kerja is not None:
             acc_h += net_req[k] * holding_cost * (k - idx_p)
             if acc_h <= setup_cost:
                 best_k = k
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': acc_h, 'Status': 'Ekonomis'})
+                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': round(acc_h), 'Status': 'Ekonomis'})
             else:
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': acc_h, 'Status': 'Stop'})
+                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': round(acc_h), 'Status': 'Stop'})
                 break
         ppb_iters.append(pd.DataFrame(t_log))
         ppb_rec[idx_p] = sum(net_req[idx_p:best_k+1])
@@ -197,23 +209,29 @@ if df_kerja is not None:
     with t_l4l:
         st.markdown("**TABEL MRP: LOT-FOR-LOT**")
         render_mrp(l4l_poh, l4l_rec, l4l_rel)
-        st.write(f"**Total Biaya L4L:** Rp {total_l4l:,.0f}")
+        st.markdown(f"### > **TOTAL BIAYA L4L:** `Rp {total_l4l:,.0f}`")
 
     with t_luc:
         st.markdown("**ITERASI PERHITUNGAN LEAST UNIT COST**")
         st.write("> **Catatan:** Baris merah (⚠️) menunjukkan biaya unit mulai naik, sistem berhenti menggabungkan periode.")
         df_luc_view = pd.DataFrame(all_luc_iterations)
-        st.dataframe(df_luc_view.style.apply(highlight_luc_warning, axis=1), use_container_width=True, hide_index=True)
+        # Menampilkan tabel tanpa kolom 'Is_Higher_Internal' agar bersih
+        st.dataframe(
+            df_luc_view.style.apply(highlight_luc_warning, axis=1), 
+            use_container_width=True, 
+            hide_index=True,
+            column_order=["Periode", "Lot Size", "Total Cost", "Unit Cost"]
+        )
         st.markdown("**TABEL MRP: LEAST UNIT COST**")
         render_mrp(luc_poh, luc_rec, luc_rel)
-        st.write(f"**Total Biaya LUC:** Rp {total_luc:,.0f}")
+        st.markdown(f"### > **TOTAL BIAYA LUC:** `Rp {total_luc:,.0f}`")
 
     with t_eoq:
         st.markdown("**PARAMETER EOQ**")
         st.info(f"Fixed Lot Size: {eoq_size} unit")
         st.markdown("**TABEL MRP: ECONOMIC ORDER QUANTITY**")
         render_mrp(eoq_poh, eoq_rec, eoq_rel)
-        st.write(f"**Total Biaya EOQ:** Rp {total_eoq:,.0f}")
+        st.markdown(f"### > **TOTAL BIAYA EOQ:** `Rp {total_eoq:,.0f}`")
 
     with t_ppb:
         st.markdown("**DETAIL PENYEIMBANGAN PART-PERIOD**")
@@ -221,7 +239,7 @@ if df_kerja is not None:
             with st.expander(f"Iterasi Lot {i+1}"): st.table(df_p)
         st.markdown("**TABEL MRP: PART PERIOD BALANCING**")
         render_mrp(ppb_poh, ppb_rec, ppb_rel)
-        st.write(f"**Total Biaya PPB:** Rp {total_ppb:,.0f}")
+        st.markdown(f"### > **TOTAL BIAYA PPB:** `Rp {total_ppb:,.0f}`")
 
     st.markdown("---")
     st.subheader("EKSPOR LAPORAN MULTI-METODE")
