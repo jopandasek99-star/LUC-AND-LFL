@@ -33,9 +33,10 @@ def dapatkan_kolom_cocok(columns, targets):
     return None
 
 def highlight_luc_warning(row):
+    # Menggunakan len(row) agar dinamis dan tidak bentrok dengan parameter column_order
     if row['Is_Higher_Internal']:
-        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * (len(row) - 1)
-    return [''] * (len(row) - 1)
+        return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
+    return [''] * len(row)
 
 def calculate_net_requirements(gross_req, sched_rec, init_inv, ss):
     periods = len(gross_req)
@@ -110,7 +111,7 @@ if df_kerja is not None:
     l4l_poh, l4l_rel = generate_poh_and_release(l4l_rec, gross_req, sched_rec, initial_inventory, lead_time)
     total_l4l = (sum(1 for x in l4l_rec if x > 0) * setup_cost) + (sum(l4l_poh) * holding_cost)
 
-    # 2. LUC (Custom Formatting Logic)
+    # 2. LUC
     luc_rec = [0] * num_periods
     all_luc_iterations = []
     i = 0
@@ -126,7 +127,7 @@ if df_kerja is not None:
             crit_val = total_c / current_lot if current_lot > 0 else float('inf')
             is_higher = True if (prev_crit_val is not None and crit_val > prev_crit_val) else False
             
-            # Format nama periode sesuai instruksi (P1 atau P1, P2, P3)
+            # Format pemisahan nama periode sesuai instruksi Anda
             if i == j:
                 range_label = f"P{i+1}"
             else:
@@ -138,7 +139,7 @@ if df_kerja is not None:
                 "Lot Size": int(current_lot), 
                 "Total Cost": round(total_c), 
                 "Unit Cost": round(crit_val, 2),
-                "Is_Higher_Internal": is_higher # Hidden helper column for style
+                "Is_Higher_Internal": is_higher
             })
             
             if not is_higher:
@@ -215,7 +216,8 @@ if df_kerja is not None:
         st.markdown("**ITERASI PERHITUNGAN LEAST UNIT COST**")
         st.write("> **Catatan:** Baris merah (⚠️) menunjukkan biaya unit mulai naik, sistem berhenti menggabungkan periode.")
         df_luc_view = pd.DataFrame(all_luc_iterations)
-        # Menampilkan tabel tanpa kolom 'Is_Higher_Internal' agar bersih
+        
+        # Penayangan aman dengan parameter column_order dan dynamic styling
         st.dataframe(
             df_luc_view.style.apply(highlight_luc_warning, axis=1), 
             use_container_width=True, 
@@ -241,6 +243,9 @@ if df_kerja is not None:
         render_mrp(ppb_poh, ppb_rec, ppb_rel)
         st.markdown(f"### > **TOTAL BIAYA PPB:** `Rp {total_ppb:,.0f}`")
 
+    # ==========================================
+    # 5. EXPORT SECTION
+    # ==========================================
     st.markdown("---")
     st.subheader("EKSPOR LAPORAN MULTI-METODE")
     excel_buffer = BytesIO()
