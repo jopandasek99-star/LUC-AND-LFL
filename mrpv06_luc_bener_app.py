@@ -9,15 +9,15 @@ from io import BytesIO
 # ==========================================
 st.set_page_config(page_title="MRP System", layout="wide")
 st.title("SISTEM PERENCANAAN KEBUTUHAN MATERIAL (MRP)")
-st.caption("Modul Decision Support System: L4L, LUC, EOQ, dan PPB")
+st.caption("Modul Decision Support System: L4L, LUC, dan EOQ")
 st.markdown("---")
 
 # ==========================================
 # 2. SIDEBAR - PARAMETER
 # ==========================================
 st.sidebar.header("PARAMETER INPUT")
-setup_cost = st.sidebar.number_input("Ordering / Setup Cost (S) (Rp)", min_value=0.0, value=100000.0, step=5000.0)
-holding_cost = st.sidebar.number_input("Holding Cost (H) (Rp / unit / periode)", min_value=0.0, value=2000.0, step=500.0)
+setup_cost = st.sidebar.number_input("Ordering / Setup Cost (S)", min_value=0.0, value=100000.0, step=5000.0)
+holding_cost = st.sidebar.number_input("Holding Cost (H) (per unit / periode)", min_value=0.0, value=2000.0, step=500.0)
 initial_inventory = st.sidebar.number_input("Persediaan Awal", min_value=0, value=30, step=5)
 safety_stock = st.sidebar.number_input("Safety Stock", min_value=0, value=0, step=1)
 lead_time = st.sidebar.number_input("Lead Time (Periode)", min_value=0, value=1, step=1)
@@ -33,7 +33,6 @@ def dapatkan_kolom_cocok(columns, targets):
     return None
 
 def highlight_luc_warning(row):
-    # Menggunakan len(row) agar dinamis dan tidak bentrok dengan parameter column_order
     if row['Is_Higher_Internal']:
         return ['background-color: #ffcccc; color: #cc0000; font-weight: bold'] * len(row)
     return [''] * len(row)
@@ -127,7 +126,6 @@ if df_kerja is not None:
             crit_val = total_c / current_lot if current_lot > 0 else float('inf')
             is_higher = True if (prev_crit_val is not None and crit_val > prev_crit_val) else False
             
-            # Format pemisahan nama periode sesuai instruksi Anda
             if i == j:
                 range_label = f"P{i+1}"
             else:
@@ -168,40 +166,18 @@ if df_kerja is not None:
     eoq_poh, eoq_rel = generate_poh_and_release(eoq_rec, gross_req, sched_rec, initial_inventory, lead_time)
     total_eoq = (sum(1 for x in eoq_rec if x > 0) * setup_cost) + (sum(eoq_poh) * holding_cost)
 
-    # 4. PPB
-    ppb_rec, ppb_iters, idx_p = [0] * num_periods, [], 0
-    while idx_p < num_periods:
-        if net_req[idx_p] == 0:
-            idx_p += 1
-            continue
-        best_k, acc_d, acc_h, t_log = idx_p, 0, 0, []
-        for k in range(idx_p, num_periods):
-            acc_d += net_req[k]
-            acc_h += net_req[k] * holding_cost * (k - idx_p)
-            if acc_h <= setup_cost:
-                best_k = k
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': round(acc_h), 'Status': 'Ekonomis'})
-            else:
-                t_log.append({'Range': f"P{idx_p+1}-P{k+1}", 'Holding Cost': round(acc_h), 'Status': 'Stop'})
-                break
-        ppb_iters.append(pd.DataFrame(t_log))
-        ppb_rec[idx_p] = sum(net_req[idx_p:best_k+1])
-        idx_p = best_k + 1
-    ppb_poh, ppb_rel = generate_poh_and_release(ppb_rec, gross_req, sched_rec, initial_inventory, lead_time)
-    total_ppb = (sum(1 for x in ppb_rec if x > 0) * setup_cost) + (sum(ppb_poh) * holding_cost)
-
     # ==========================================
     # 4. DASHBOARD RESULTS
     # ==========================================
     st.markdown("---")
     st.subheader("HASIL KOMPARASI PERFORMA ALL METODE")
-    biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq, 'PPB': total_ppb}
+    biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq}
     best_m = min(biaya_dict, key=biaya_dict.get)
-    cols = st.columns(4)
+    cols = st.columns(3)
     for i, (name, val) in enumerate(biaya_dict.items()):
-        cols[i].metric(f"TOTAL BIAYA {name}", f"Rp {val:,.0f}", delta="Terbaik" if name == best_m else None)
+        cols[i].metric(f"TOTAL BIAYA {name}", f"{val:,.0f}", delta="Terbaik" if name == best_m else None)
 
-    t_l4l, t_luc, t_eoq, t_ppb = st.tabs(["METODE L4L", "METODE LUC", "METODE EOQ", "METODE PPB"])
+    t_l4l, t_luc, t_eoq = st.tabs(["METODE L4L", "METODE LUC", "METODE EOQ"])
 
     def render_mrp(poh, rec, rel):
         df = pd.DataFrame({'Gross Requirements': gross_req, 'Scheduled Receipts': sched_rec, 'Projected On Hand': poh, 'Net Requirements': net_req, 'Planned Order Receipts': rec, 'Planned Order Releases': rel}, index=period_labels).T
@@ -210,14 +186,12 @@ if df_kerja is not None:
     with t_l4l:
         st.markdown("**TABEL MRP: LOT-FOR-LOT**")
         render_mrp(l4l_poh, l4l_rec, l4l_rel)
-        st.markdown(f"### > **TOTAL BIAYA L4L:** `Rp {total_l4l:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA L4L:** `{total_l4l:,.0f}`")
 
     with t_luc:
         st.markdown("**ITERASI PERHITUNGAN LEAST UNIT COST**")
         st.write("> **Catatan:** Baris merah (⚠️) menunjukkan biaya unit mulai naik, sistem berhenti menggabungkan periode.")
         df_luc_view = pd.DataFrame(all_luc_iterations)
-        
-        # Penayangan aman dengan parameter column_order dan dynamic styling
         st.dataframe(
             df_luc_view.style.apply(highlight_luc_warning, axis=1), 
             use_container_width=True, 
@@ -226,22 +200,14 @@ if df_kerja is not None:
         )
         st.markdown("**TABEL MRP: LEAST UNIT COST**")
         render_mrp(luc_poh, luc_rec, luc_rel)
-        st.markdown(f"### > **TOTAL BIAYA LUC:** `Rp {total_luc:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA LUC:** `{total_luc:,.0f}`")
 
     with t_eoq:
         st.markdown("**PARAMETER EOQ**")
         st.info(f"Fixed Lot Size: {eoq_size} unit")
         st.markdown("**TABEL MRP: ECONOMIC ORDER QUANTITY**")
         render_mrp(eoq_poh, eoq_rec, eoq_rel)
-        st.markdown(f"### > **TOTAL BIAYA EOQ:** `Rp {total_eoq:,.0f}`")
-
-    with t_ppb:
-        st.markdown("**DETAIL PENYEIMBANGAN PART-PERIOD**")
-        for i, df_p in enumerate(ppb_iters):
-            with st.expander(f"Iterasi Lot {i+1}"): st.table(df_p)
-        st.markdown("**TABEL MRP: PART PERIOD BALANCING**")
-        render_mrp(ppb_poh, ppb_rec, ppb_rel)
-        st.markdown(f"### > **TOTAL BIAYA PPB:** `Rp {total_ppb:,.0f}`")
+        st.markdown(f"### > **TOTAL BIAYA EOQ:** `{total_eoq:,.0f}`")
 
     # ==========================================
     # 5. EXPORT SECTION
@@ -251,5 +217,5 @@ if df_kerja is not None:
     excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
         pd.DataFrame({'GR': gross_req, 'Net': net_req}, index=period_labels).T.to_excel(writer, sheet_name="Data")
-        pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec, 'PPB': ppb_rec}, index=period_labels).T.to_excel(writer, sheet_name="Hasil_Lot")
+        pd.DataFrame({'L4L': l4l_rec, 'LUC': luc_rec, 'EOQ': eoq_rec}, index=period_labels).T.to_excel(writer, sheet_name="Hasil_Lot")
     st.download_button(label="↓ DOWNLOAD LAPORAN EXCEL", data=excel_buffer.getvalue(), file_name="Laporan_MRP.xlsx")
