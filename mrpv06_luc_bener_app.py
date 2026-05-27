@@ -37,21 +37,18 @@ st.markdown("""
             font-weight: 700;
         }
         
-        /* SPECIFIC FIX: Input Parameter Fields Custom Styling */
-        /* Membuat latar belakang kolom input menjadi terang kontras */
+        /* Input Parameter Fields Custom Styling */
         div[data-baseweb="input"] {
             background-color: #ffffff !important; 
             border: 1px solid #e5dfcb !important;
             border-radius: 6px !important;
         }
         
-        /* Membuat warna huruf teks isian di dalam kolom menjadi Merah Marun Tegas */
         input {
             color: #6a0708 !important; 
             font-weight: 600 !important;
         }
         
-        /* Menyesuaikan tombol up/down stepper pada input angka */
         div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
             background-color: #faf8f2 !important;
         }
@@ -127,7 +124,7 @@ max_capacity = st.sidebar.number_input("Maximum Warehouse Capacity (Units)", min
 # ==========================================
 # HELPER FUNCTIONS (GLOBAL SCOPE & STYLING)
 # ==========================================
-def dapatkan_kolom_cocok(columns, targets):
+def get_matching_column(columns, targets):
     for col in columns:
         col_clean = str(col).strip().lower().replace("_", "").replace(" ", "")
         if col_clean in targets:
@@ -141,7 +138,7 @@ def get_styled_mrp_table(df_mrp_transposed, max_cap):
         return [''] * len(row)
     return df_mrp_transposed.style.apply(highlight_row_capacity, axis=1)
 
-def highlight_status_iterasi(df):
+def highlight_iteration_status(df):
     style_df = pd.DataFrame('', index=df.index, columns=df.columns)
     n_rows = len(df)
     
@@ -173,7 +170,7 @@ input_method = st.radio(
     ["Upload File (Excel / CSV)", "Manual Interface Input", "Use Template Dataset"]
 )
 
-df_kerja = None
+df_working = None
 
 if input_method == "Upload File (Excel / CSV)":
     uploaded_file = st.file_uploader("Upload data sheet (Supported formats: .xlsx, .xls, .csv)", type=["csv", "xlsx", "xls"])
@@ -184,26 +181,26 @@ if input_method == "Upload File (Excel / CSV)":
             else:
                 df_raw = pd.read_excel(uploaded_file)
                 
-            col_periode = dapatkan_kolom_cocok(df_raw.columns, ['periode', 'mingguke', 'p', 'minggu', 'period', 'week'])
-            col_gr = dapatkan_kolom_cocok(df_raw.columns, ['gr', 'grossrequirement', 'grossrequirements', 'kebutuhankotor'])
-            col_sr = dapatkan_kolom_cocok(df_raw.columns, ['sr', 'scheduledreceipt', 'scheduledreceipts', 'penerimaanterjadwal'])
+            col_period = get_matching_column(df_raw.columns, ['periode', 'mingguke', 'p', 'minggu', 'period', 'week'])
+            col_gr = get_matching_column(df_raw.columns, ['gr', 'grossrequirement', 'grossrequirements', 'kebutuhankotor'])
+            col_sr = get_matching_column(df_raw.columns, ['sr', 'scheduledreceipt', 'scheduledreceipts', 'penerimaanterjadwal'])
             
-            df_kerja = pd.DataFrame()
+            df_working = pd.DataFrame()
             
-            if col_periode and col_periode in df_raw.columns:
-                df_kerja['Period'] = df_raw[col_periode].astype(str).str.upper()
+            if col_period and col_period in df_raw.columns:
+                df_working['Period'] = df_raw[col_period].astype(str).str.upper()
             else:
-                df_kerja['Period'] = [f"P{i+1}" for i in range(len(df_raw))]
+                df_working['Period'] = [f"P{i+1}" for i in range(len(df_raw))]
                 
             if col_gr and col_gr in df_raw.columns:
-                df_kerja['Gross Requirements'] = df_raw[col_gr].fillna(0).astype(int)
+                df_working['Gross Requirements'] = df_raw[col_gr].fillna(0).astype(int)
             else:
                 st.error("❌ Gross Requirements (GR) column could not be automatically parsed.")
                 
             if col_sr and col_sr in df_raw.columns:
-                df_kerja['Scheduled Receipts'] = df_raw[col_sr].fillna(0).astype(int)
+                df_working['Scheduled Receipts'] = df_raw[col_sr].fillna(0).astype(int)
             else:
-                df_kerja['Scheduled Receipts'] = 0
+                df_working['Scheduled Receipts'] = 0
                 
         except Exception as e:
             st.error(f"Failed to parse file matrix. Error: {e}")
@@ -216,7 +213,7 @@ elif input_method == "Manual Interface Input":
         'Scheduled Receipts': [0] * num_periods_input
     }
     df_empty = pd.DataFrame(init_data)
-    df_kerja = st.data_editor(df_empty, use_container_width=True, hide_index=True)
+    df_working = st.data_editor(df_empty, use_container_width=True, hide_index=True)
 
 else:
     default_data = {
@@ -224,12 +221,12 @@ else:
         'Gross Requirements': [35, 30, 40, 0, 10, 40, 30, 0, 30, 55],
         'Scheduled Receipts': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     }
-    df_kerja = pd.DataFrame(default_data)
+    df_working = pd.DataFrame(default_data)
 
-if df_kerja is not None and not df_kerja.empty:
-    gross_req = df_kerja['Gross Requirements'].fillna(0).astype(int).tolist()
-    sched_rec = df_kerja['Scheduled Receipts'].fillna(0).astype(int).tolist()
-    period_labels = df_kerja['Period'].astype(str).str.upper().tolist()
+if df_working is not None and not df_working.empty:
+    gross_req = df_working['Gross Requirements'].fillna(0).astype(int).tolist()
+    sched_rec = df_working['Scheduled Receipts'].fillna(0).astype(int).tolist()
+    period_labels = df_working['Period'].astype(str).str.upper().tolist()
     
     st.markdown("##### Matrix Input Preview")
     df_preview_transposed = pd.DataFrame({
@@ -443,7 +440,7 @@ if df_kerja is not None and not df_kerja.empty:
     
     t_l4l, t_luc, t_eoq, t_ppb = st.tabs(["📋 Lot-for-Lot (L4L)", "🔍 Least Unit Cost (LUC)", "🎯 Economic Order Quantity (EOQ)", "⚖️ Part Period Balancing (PPB)"])
 
-    def tampilkan_tabel_mrp(nama_metode, data_dict, max_cap):
+    def display_mrp_table(method_name, data_dict, max_cap):
         df = pd.DataFrame({
             'Gross Requirements': gross_req,
             'Scheduled Receipts': sched_rec,
@@ -454,27 +451,28 @@ if df_kerja is not None and not df_kerja.empty:
         }, index=[f"P{i+1}" for i in range(num_periods)]).T
         st.dataframe(get_styled_mrp_table(df, max_cap), use_container_width=True)
         if max(data_dict['poh']) > max_cap:
-            st.error(f"⚠️ **Capacity Violation Threshold Raised:** Inventory accumulation via {nama_metode} breaches physical facility space constraints ({max_cap} units).")
+            st.error(f"⚠️ **Capacity Violation Threshold Raised:** Inventory accumulation via {method_name} breaches physical facility space constraints ({max_cap} units).")
 
     with t_l4l:
         st.subheader("MRP Standard Grid Matrix — Lot-for-Lot")
-        tampilkan_tabel_mrp("L4L", res['l4l'], max_capacity)
+        display_mrp_table("L4L", res['l4l'], max_capacity)
 
     with t_luc:
         st.subheader("Least Unit Cost Operational Evaluation Logs")
         format_luc = {'Setup Cost': '{:.2f}', 'Holding Cost': '{:.2f}', 'Total Cost': '{:.2f}', 'LUC (Cost/Unit)': '{:.4f}'}
         for idx, df_iter in enumerate(res['luc']['iters']):
             with st.expander(f"Order Cycle Discovery Step {idx+1}"):
-                styled_df = df_iter.style.apply(highlight_status_iterasi, axis=None).format(format_luc)
+                styled_df = df_iter.style.apply(highlight_iteration_status, axis=None).format(format_luc)
                 st.dataframe(styled_df, hide_index=True, use_container_width=True)
-        tampilkan_tabel_mrp("LUC", res['luc'], max_capacity)
+        display_mrp_table("LUC", res['luc'], max_capacity)
 
     with t_eoq:
         st.subheader("Economic Order Quantity Model Assessment")
         
+        # All Indonesian strings inside this expander have been sanitized and translated into English
         with st.expander("Formula Calculation & Parameter Trace", expanded=True):
             total_gross_req = sum(gross_req)
-            n_periode = len(gross_req)
+            n_period = len(gross_req)
             avg_demand_calc = res['eoq']['avg_demand_gross']
             
             numerator = 2 * avg_demand_calc * setup_cost
@@ -487,46 +485,46 @@ if df_kerja is not None and not df_kerja.empty:
             st.markdown(f"""
             * Discrete Timeline Profile: `{gross_req}`
             * Total Gross Requirements ($\sum GR$) = `{total_gross_req}` units
-            * Planning Horizon Length ($n$) = `{n_periode}` periods
+            * Planning Horizon Length ($n$) = `{n_period}` periods
             * Setup Cost ($S$) = `{setup_cost}`
             * Holding Cost ($H$) = `{holding_cost}`
             """)
             
             st.markdown("**2. Periodic Average Target Rate ($D$):**")
             st.markdown(f"""
-            $$D = \\frac{{\\sum GR}}{{n}} = \\frac{{{total_gross_req}}}{{{n_periode}}} = {avg_demand_calc:.4f} \\text{{ units/period}}$$
+            $$D = \\frac{{\\sum GR}}{{n}} = \\frac{{{total_gross_req}}}{{{n_period}}} = {avg_demand_calc:.4f} \\text{{ units/period}}$$
             """)
             
             st.markdown("**3. Constant Value Synthesis (Step-by-Step):**")
             st.markdown(f"""
-            Rumus dasar EOQ:
+            Base EOQ Formula:
             $$EOQ = \\sqrt{{\\frac{{2 \\times D \\times S}}{{H}}}}$$
             
-            * **Langkah A (Substitusi Nilai & Perkalian Atas):**
+            * **Step A (Value Substitution & Numerator Multiplication):**
               $$2 \\times D \\times S = 2 \\times {avg_demand_calc:.4f} \\times {setup_cost} = {numerator:.4f}$$
               
-            * **Langkah B (Pembagian Pembilang dengan Holding Cost):**
+            * **Step B (Dividing Numerator by Holding Cost):**
               $$\\frac{{{numerator:.4f}}}{{H}} = \\frac{{{numerator:.4f}}}{{{holding_cost}}} = {divided_val:.4f}$$
               
-            * **Langkah C (Akar Kuadrat Hasil Pembagian):**
+            * **Step C (Square Root of the Division Result):**
               $$EOQ = \\sqrt{{{divided_val:.4f}}} = {eoq_final_raw:.4f}$$
               
-            * **Langkah D (Pembulatan ke Atas untuk Lot Praktis):**
+            * **Step D (Ceiling Rounding for Practical Lot Size):**
               $$Q^* = \\lceil {eoq_final_raw:.4f} \\rceil = {res['eoq']['size']} \\text{{ units}}$$
             """)
-            st.markdown(f"Maka, kuantitas ukuran lot tetap yang dikunci untuk eksekusi adalah **$Q^* = {res['eoq']['size']}$ units**.")
+            st.markdown(f"Therefore, the fixed lot size quantity locked for execution is **$Q^* = {res['eoq']['size']}$ units**.")
         
         st.info(f"💡 **Fixed Lot Control Rule:** Baseline order scale for the EOQ profile is locked at **{res['eoq']['size']} units** per cycle.")
-        tampilkan_tabel_mrp("EOQ", res['eoq'], max_capacity)
+        display_mrp_table("EOQ", res['eoq'], max_capacity)
 
     with t_ppb:
         st.subheader("Part Period Balancing Operational Evaluation Logs")
         format_ppb = {'EPP Limit': '{:.2f}', 'Cumulative Part-Period': '{:.2f}'}
         for idx, df_iter in enumerate(res['ppb']['iters']):
             with st.expander(f"Order Window Evaluation Strategy {idx+1}"):
-                styled_df = df_iter.style.apply(highlight_status_iterasi, axis=None).format(format_ppb)
+                styled_df = df_iter.style.apply(highlight_iteration_status, axis=None).format(format_ppb)
                 st.dataframe(styled_df, hide_index=True, use_container_width=True)
-        tampilkan_tabel_mrp("PPB", res['ppb'], max_capacity)
+        display_mrp_table("PPB", res['ppb'], max_capacity)
 
     # ==========================================
     # 5. PERFORMANCE ANALYSIS & CHARTS
