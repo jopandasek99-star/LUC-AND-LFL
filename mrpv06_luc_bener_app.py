@@ -5,9 +5,75 @@ import math
 from io import BytesIO
 
 # ==========================================
-# 1. PAGE CONFIGURATION & HEADER
+# 1. PAGE CONFIGURATION & CUSTOM DESIGN (CSS)
 # ==========================================
 st.set_page_config(page_title="MRP System", layout="wide")
+
+# Injecting Custom CSS for Premium Maroon Aesthetic
+st.markdown("""
+    <style>
+    /* Global Background: Maroon Gradient */
+    .stApp {
+        background: linear-gradient(135deg, #4A0E17 0%, #2A080C 100%);
+        color: #F5E6E8 !important;
+    }
+    
+    /* Typography Style: Bold, Crisp, and Highly Legible */
+    html, body, [class*="css"], p, span, label {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
+        font-weight: 500;
+        color: #F5E6E8 !important;
+    }
+    
+    /* Headers Custom Styling */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Arial Black', Gadget, sans-serif !important;
+        color: #FFFFFF !important;
+        letter-spacing: 0.5px;
+    }
+    
+    /* Sidebar: Lighter Maroon Monochromatic Tone */
+    [data-testid="stSidebar"] {
+        background-color: #5C131E !important;
+        border-right: 2px solid #741B28;
+    }
+    
+    /* Sidebar Text & Inputs */
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
+    }
+    
+    /* Input Elements styling inside sidebar for better contrast */
+    div[data-baseweb="input"] {
+        background-color: #3D0A11 !important;
+        border: 1px solid #962D3E !important;
+        border-radius: 6px;
+    }
+    
+    /* Tabs Custom Colorization */
+    button[data-baseweb="tab"] {
+        color: #CDB4DB !important;
+        font-weight: bold !important;
+    }
+    button[aria-selected="true"] {
+        color: #FFFFFF !important;
+        border-bottom-color: #FF4D6D !important;
+    }
+    
+    /* Dataframe Table Headers & Styling for High Contrast */
+    .stDataFrame, div[data-testid="stTable"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 5px;
+    }
+    
+    /* Horizontal lines styling */
+    hr {
+        border-top: 1px solid #741B28 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("MATERIAL REQUIREMENTS PLANNING SYSTEM (MRP)")
 
 l4l_help = "LOT-FOR-LOT (L4L): Orders exactly what is needed each period, minimizing holding costs but maximizing setup frequency."
@@ -188,7 +254,7 @@ if df_kerja is not None:
             is_higher = (prev_unit_cost is not None and unit_cost > prev_unit_cost)
 
             range_label = f"P{i+1}" if i == j else ", ".join(f"P{x}" for x in range(i + 1, j + 2))
-            display_label = f"⚠️ {range_label}" if is_higher else range_label
+            display_label = f"WRN {range_label}" if is_higher else range_label
 
             all_luc_iterations.append({
                 "Period": display_label,
@@ -277,7 +343,7 @@ if df_kerja is not None:
                     cum_part_period = new_cum_part_period
                     best_k = k
                     t_log.append({
-                        'Period': f"⚠️ {range_label}",
+                        'Period': f"WRN {range_label}",
                         'Accumulated Unit': int(accumulated_d),
                         'EPP Limit': round(epp_limit, 2),
                         'Cumulative Part-Period': round(cum_part_period, 2),
@@ -286,7 +352,7 @@ if df_kerja is not None:
                     })
                 else:
                     t_log.append({
-                        'Period': f"⚠️ {range_label}",
+                        'Period': f"WRN {range_label}",
                         'Accumulated Unit': int(accumulated_d + net_req[k]),
                         'EPP Limit': round(epp_limit, 2),
                         'Cumulative Part-Period': round(new_cum_part_period, 2),
@@ -326,7 +392,7 @@ if df_kerja is not None:
 
     with t_luc:
         st.markdown("**LEAST UNIT COST — CALCULATION ITERATIONS**")
-        st.write("> **Note:** Red rows (⚠️) show where unit cost starts rising — the system locks the previous combo as the chosen lot.")
+        st.write("> **Note:** Highlighted rows show where unit cost starts rising — the system locks the previous combo as the chosen lot.")
         df_luc_view = pd.DataFrame(all_luc_iterations)
         st.dataframe(
             df_luc_view.style.apply(highlight_luc_warning, axis=1),
@@ -350,7 +416,7 @@ if df_kerja is not None:
 
     with t_ppb:
         st.markdown("**PART PERIOD BALANCING — CUMULATIVE BALANCING ITERATIONS**")
-        st.write("> **Note:** Red rows (⚠️) show where the part-period threshold overshoot occurs. The system automatically performs a bi-directional target distance evaluation to choose the closest match.")
+        st.write("> **Note:** Highlighted rows show where the part-period threshold overshoot occurs. The system automatically performs a bi-directional target distance evaluation to choose the closest match.")
         
         for idx, df_iter in enumerate(all_ppb_iterations):
             with st.expander(f"Order Cycle Discovery Step {idx+1}"):
