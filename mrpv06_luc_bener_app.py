@@ -15,7 +15,7 @@ st.set_page_config(page_title="OptiLot — Advanced MRP Engine", layout="wide")
 st.markdown("""
     <style>
         /* Base typography setting */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif;
         }
@@ -35,6 +35,25 @@ st.markdown("""
         section[data-testid="stSidebar"] h3 {
             color: #6a0708 !important;
             font-weight: 700;
+        }
+        
+        /* SPECIFIC FIX: Input Parameter Fields Custom Styling */
+        /* Membuat latar belakang kolom input menjadi terang kontras */
+        div[data-baseweb="input"] {
+            background-color: #ffffff !important; 
+            border: 1px solid #e5dfcb !important;
+            border-radius: 6px !important;
+        }
+        
+        /* Membuat warna huruf teks isian di dalam kolom menjadi Merah Marun Tegas */
+        input {
+            color: #6a0708 !important; 
+            font-weight: 600 !important;
+        }
+        
+        /* Menyesuaikan tombol up/down stepper pada input angka */
+        div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
+            background-color: #faf8f2 !important;
         }
         
         /* Typography overrides for premium editorial look */
@@ -453,13 +472,11 @@ if df_kerja is not None and not df_kerja.empty:
     with t_eoq:
         st.subheader("Economic Order Quantity Model Assessment")
         
-        # Penjabaran Detail Formula Poin 3 (Sesuai Request)
         with st.expander("Formula Calculation & Parameter Trace", expanded=True):
             total_gross_req = sum(gross_req)
             n_periode = len(gross_req)
             avg_demand_calc = res['eoq']['avg_demand_gross']
             
-            # Hitungan Tengah untuk Visualisasi Step-by-Step
             numerator = 2 * avg_demand_calc * setup_cost
             divided_val = numerator / holding_cost
             eoq_final_raw = math.sqrt(divided_val)
