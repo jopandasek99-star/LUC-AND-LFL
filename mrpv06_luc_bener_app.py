@@ -15,7 +15,7 @@ st.set_page_config(page_title="OptiLot — Advanced MRP Engine", layout="wide")
 st.markdown("""
     <style>
         /* Base typography setting */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700&display=swap');
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif;
         }
@@ -159,6 +159,25 @@ def highlight_iteration_status(df):
         style_df.iloc[n_rows - 1] = 'background-color: #e8f5e9; color: #1b5e20; font-weight: bold;'
                 
     return style_df
+
+def display_cost_summary_cards(setup, hold, total):
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(f"""<div style='background-color: #ffffff; padding: 14px; border-radius: 6px; border: 1px solid #e5dfcb; border-left: 4px solid #415a77;'>
+                        <div style='color: #666666; font-size: 11px; font-weight: 600; text-transform: uppercase;'>Set Up Cost Total</div>
+                        <div style='font-size: 20px; font-weight: 700; color: #415a77; margin-top: 2px;'>{setup:,.2f}</div>
+                        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""<div style='background-color: #ffffff; padding: 14px; border-radius: 6px; border: 1px solid #e5dfcb; border-left: 4px solid #2a9d8f;'>
+                        <div style='color: #666666; font-size: 11px; font-weight: 600; text-transform: uppercase;'>Holding Cost Total</div>
+                        <div style='font-size: 20px; font-weight: 700; color: #2a9d8f; margin-top: 2px;'>{hold:,.2f}</div>
+                        </div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""<div style='background-color: #f4efdc; padding: 14px; border-radius: 6px; border: 1px solid #e5dfcb; border-left: 4px solid #6a0708;'>
+                        <div style='color: #4a4a4a; font-size: 11px; font-weight: 600; text-transform: uppercase;'>Grand Total Cost</div>
+                        <div style='font-size: 20px; font-weight: 700; color: #6a0708; margin-top: 2px;'>{total:,.2f}</div>
+                        </div>""", unsafe_allow_html=True)
 
 # ==========================================
 # 3. DATA INPUT SECTION
@@ -456,6 +475,7 @@ if df_working is not None and not df_working.empty:
     with t_l4l:
         st.subheader("MRP Standard Grid Matrix — Lot-for-Lot")
         display_mrp_table("L4L", res['l4l'], max_capacity)
+        display_cost_summary_cards(res['l4l']['setup'], res['l4l']['hold'], res['l4l']['total'])
 
     with t_luc:
         st.subheader("Least Unit Cost Operational Evaluation Logs")
@@ -465,11 +485,11 @@ if df_working is not None and not df_working.empty:
                 styled_df = df_iter.style.apply(highlight_iteration_status, axis=None).format(format_luc)
                 st.dataframe(styled_df, hide_index=True, use_container_width=True)
         display_mrp_table("LUC", res['luc'], max_capacity)
+        display_cost_summary_cards(res['luc']['setup'], res['luc']['hold'], res['luc']['total'])
 
     with t_eoq:
         st.subheader("Economic Order Quantity Model Assessment")
         
-        # All Indonesian strings inside this expander have been sanitized and translated into English
         with st.expander("Formula Calculation & Parameter Trace", expanded=True):
             total_gross_req = sum(gross_req)
             n_period = len(gross_req)
@@ -480,7 +500,6 @@ if df_working is not None and not df_working.empty:
             eoq_final_raw = math.sqrt(divided_val)
             
             st.markdown("#### Operational Sizing Calculus Steps")
-            
             st.markdown("**1. Data Discovery Parameters:**")
             st.markdown(f"""
             * Discrete Timeline Profile: `{gross_req}`
@@ -516,6 +535,7 @@ if df_working is not None and not df_working.empty:
         
         st.info(f"💡 **Fixed Lot Control Rule:** Baseline order scale for the EOQ profile is locked at **{res['eoq']['size']} units** per cycle.")
         display_mrp_table("EOQ", res['eoq'], max_capacity)
+        display_cost_summary_cards(res['eoq']['setup'], res['eoq']['hold'], res['eoq']['total'])
 
     with t_ppb:
         st.subheader("Part Period Balancing Operational Evaluation Logs")
@@ -525,6 +545,7 @@ if df_working is not None and not df_working.empty:
                 styled_df = df_iter.style.apply(highlight_iteration_status, axis=None).format(format_ppb)
                 st.dataframe(styled_df, hide_index=True, use_container_width=True)
         display_mrp_table("PPB", res['ppb'], max_capacity)
+        display_cost_summary_cards(res['ppb']['setup'], res['ppb']['hold'], res['ppb']['total'])
 
     # ==========================================
     # 5. PERFORMANCE ANALYSIS & CHARTS
