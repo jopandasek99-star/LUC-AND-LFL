@@ -28,11 +28,11 @@ st.markdown("---")
 # 2. SIDEBAR - CONTROL PARAMETERS
 # ==========================================
 st.sidebar.header("INPUT PARAMETERS")
-setup_cost        = st.sidebar.number_input("Ordering / Setup Cost (S)",          min_value=0.0,  value=100000.0, step=5000.0)
-holding_cost      = st.sidebar.number_input("Holding Cost (H) (per unit/period)", min_value=0.0,  value=2000.0,   step=500.0)
-initial_inventory = st.sidebar.number_input("Initial Inventory",                  min_value=0,    value=30,       step=5)
-safety_stock      = st.sidebar.number_input("Safety Stock",                       min_value=0,    value=0,        step=1)
-lead_time         = st.sidebar.number_input("Lead Time (Periods)",                min_value=0,    value=1,        step=1)
+setup_cost = st.sidebar.number_input("Ordering / Setup Cost (S)", min_value=0.0, value=100000.0, step=5000.0)
+holding_cost = st.sidebar.number_input("Holding Cost (H) (per unit/period)", min_value=0.0, value=2000.0, step=500.0)
+initial_inventory = st.sidebar.number_input("Initial Inventory", min_value=0, value=30, step=5)
+safety_stock = st.sidebar.number_input("Safety Stock", min_value=0, value=0, step=1)
+lead_time = st.sidebar.number_input("Lead Time (Periods)", min_value=0, value=1, step=1)
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -114,10 +114,10 @@ if input_method == "Upload File":
         try:
             df_raw = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             col_periode = dapatkan_kolom_cocok(df_raw.columns, ['periode', 'minggu', 'p', 'period', 'week'])
-            col_gr      = dapatkan_kolom_cocok(df_raw.columns, ['gr', 'grossrequirement', 'kebutuhankotor', 'grossrequirements'])
-            col_sr      = dapatkan_kolom_cocok(df_raw.columns, ['sr', 'scheduledreceipt', 'penerimaanterjadwal', 'scheduledreceipts'])
+            col_gr = dapatkan_kolom_cocok(df_raw.columns, ['gr', 'grossrequirement', 'kebutuhankotor', 'grossrequirements'])
+            col_sr = dapatkan_kolom_cocok(df_raw.columns, ['sr', 'scheduledreceipt', 'penerimaanterjadwal', 'scheduledreceipts'])
             df_kerja = pd.DataFrame()
-            df_kerja['Period']             = df_raw[col_periode].astype(str) if col_periode else [f"P{i+1}" for i in range(len(df_raw))]
+            df_kerja['Period'] = df_raw[col_periode].astype(str) if col_periode else [f"P{i+1}" for i in range(len(df_raw))]
             df_kerja['Gross Requirements'] = df_raw[col_gr].fillna(0).astype(int) if col_gr else 0
             df_kerja['Scheduled Receipts'] = df_raw[col_sr].fillna(0).astype(int) if col_sr else 0
         except:
@@ -126,7 +126,7 @@ if input_method == "Upload File":
 elif input_method == "Manual Input":
     num_periods_input = st.number_input("Number of Periods:", min_value=1, max_value=52, value=8)
     init_data = {
-        'Period':             [f"P{i+1}" for i in range(num_periods_input)],
+        'Period': [f"P{i+1}" for i in range(num_periods_input)],
         'Gross Requirements': [0] * num_periods_input,
         'Scheduled Receipts': [0] * num_periods_input,
     }
@@ -134,20 +134,20 @@ elif input_method == "Manual Input":
 
 else:
     df_kerja = pd.DataFrame({
-        'Period':             [f"P{i}" for i in range(1, 9)],
+        'Period': [f"P{i}" for i in range(1, 9)],
         'Gross Requirements': [30, 40, 20, 70, 40, 10, 30, 60],
-        'Scheduled Receipts': [0,  10,  0,  0, 20,  0,  0,  0],
+        'Scheduled Receipts': [0, 10, 0, 0, 20, 0, 0, 0],
     })
 
 # ==========================================
 # 4. CALCULATION ENGINES
 # ==========================================
 if df_kerja is not None:
-    gross_req     = df_kerja['Gross Requirements'].tolist()
-    sched_rec     = df_kerja['Scheduled Receipts'].tolist()
+    gross_req = df_kerja['Gross Requirements'].tolist()
+    sched_rec = df_kerja['Scheduled Receipts'].tolist()
     period_labels = df_kerja['Period'].tolist()
-    num_periods   = len(gross_req)
-    net_req       = calculate_net_requirements(gross_req, sched_rec, initial_inventory, safety_stock)
+    num_periods = len(gross_req)
+    net_req = calculate_net_requirements(gross_req, sched_rec, initial_inventory, safety_stock)
 
     st.markdown("**PREVIEW INPUT DATA SUMMARY**")
     st.dataframe(
@@ -156,12 +156,12 @@ if df_kerja is not None:
     )
 
     # ── L4L Engine ─────────────────────────────────────────────────────────
-    l4l_rec          = list(net_req)
+    l4l_rec = list(net_req)
     l4l_poh, l4l_rel = generate_poh_and_release(l4l_rec, gross_req, sched_rec, initial_inventory, lead_time)
-    total_l4l        = (sum(1 for x in l4l_rec if x > 0) * setup_cost) + (sum(l4l_poh) * holding_cost)
+    total_l4l = (sum(1 for x in l4l_rec if x > 0) * setup_cost) + (sum(l4l_poh) * holding_cost)
 
     # ── LUC Engine ─────────────────────────────────────────────────────────
-    luc_rec            = [0] * num_periods
+    luc_rec = [0] * num_periods
     all_luc_iterations = []
     i = 0
     while i < num_periods:
@@ -172,42 +172,42 @@ if df_kerja is not None:
         best_lot, prev_unit_cost = None, None
 
         for j in range(i, num_periods):
-            nr_slice    = net_req[i:j + 1]
+            nr_slice = net_req[i:j + 1]
             current_lot = sum(nr_slice)
-            h_cost      = compute_luc_holding_cost(nr_slice)
-            total_c     = setup_cost + h_cost
-            unit_cost   = total_c / current_lot if current_lot > 0 else float('inf')
-            is_higher   = (prev_unit_cost is not None and unit_cost > prev_unit_cost)
+            h_cost = compute_luc_holding_cost(nr_slice)
+            total_c = setup_cost + h_cost
+            unit_cost = total_c / current_lot if current_lot > 0 else float('inf')
+            is_higher = (prev_unit_cost is not None and unit_cost > prev_unit_cost)
 
-            range_label   = f"P{i+1}" if i == j else ", ".join(f"P{x}" for x in range(i + 1, j + 2))
+            range_label = f"P{i+1}" if i == j else ", ".join(f"P{x}" for x in range(i + 1, j + 2))
             display_label = f"⚠️ {range_label}" if is_higher else range_label
 
             all_luc_iterations.append({
-                "Period":             display_label,
-                "Lot Size":           int(current_lot),
-                "Total Cost":         format_lokal_id(total_c),
-                "Unit Cost":          format_lokal_id(round(unit_cost, 2), is_decimal=True),
+                "Period": display_label,
+                "Lot Size": int(current_lot),
+                "Total Cost": format_lokal_id(total_c),
+                "Unit Cost": format_lokal_id(round(unit_cost, 2), is_decimal=True),
                 "Is_Higher_Internal": is_higher,
             })
 
             if not is_higher:
-                best_lot       = {"Lot Size": current_lot, "End_Idx": j}
+                best_lot = {"Lot Size": current_lot, "End_Idx": j}
                 prev_unit_cost = unit_cost
             else:
                 break
 
         if best_lot:
             luc_rec[i] = best_lot["Lot Size"]
-            i          = best_lot["End_Idx"] + 1
+            i = best_lot["End_Idx"] + 1
         else:
             i += 1
 
     luc_poh, luc_rel = generate_poh_and_release(luc_rec, gross_req, sched_rec, initial_inventory, lead_time)
-    total_luc        = (sum(1 for x in luc_rec if x > 0) * setup_cost) + (sum(luc_poh) * holding_cost)
+    total_luc = (sum(1 for x in luc_rec if x > 0) * setup_cost) + (sum(luc_poh) * holding_cost)
 
     # ── EOQ Engine ─────────────────────────────────────────────────────────
-    avg_d = np.mean(gross_req)  # FIX: use gross demand, not net_req
-    if holding_cost > 0 and avg_d > 0:  # FIX: guard against division by zero
+    avg_d = np.mean(gross_req)
+    if holding_cost > 0 and avg_d > 0:
         eoq_size = math.ceil(math.sqrt((2 * avg_d * setup_cost) / holding_cost))
     else:
         eoq_size = int(sum(gross_req))
@@ -216,15 +216,15 @@ if df_kerja is not None:
     for idx in range(num_periods):
         if net_req[idx] > 0:
             if rem_stok < net_req[idx]:
-                needed       = net_req[idx] - rem_stok
-                lots         = math.ceil(needed / eoq_size) if eoq_size > 0 else 1
+                needed = net_req[idx] - rem_stok
+                lots = math.ceil(needed / eoq_size) if eoq_size > 0 else 1
                 eoq_rec[idx] = lots * eoq_size
-                rem_stok     = (eoq_rec[idx] + rem_stok) - net_req[idx]
+                rem_stok = (eoq_rec[idx] + rem_stok) - net_req[idx]
             else:
                 rem_stok -= net_req[idx]
 
     eoq_poh, eoq_rel = generate_poh_and_release(eoq_rec, gross_req, sched_rec, initial_inventory, lead_time)
-    total_eoq        = (sum(1 for x in eoq_rec if x > 0) * setup_cost) + (sum(eoq_poh) * holding_cost)
+    total_eoq = (sum(1 for x in eoq_rec if x > 0) * setup_cost) + (sum(eoq_poh) * holding_cost)
 
     # ==========================================
     # 5. METHOD DETAILS (TABS)
@@ -234,10 +234,10 @@ if df_kerja is not None:
 
     def render_mrp(poh, rec, rel):
         df = pd.DataFrame({
-            'Gross Requirements':     gross_req,
-            'Scheduled Receipts':     sched_rec,
-            'Projected On Hand':      poh,
-            'Net Requirements':       net_req,
+            'Gross Requirements': gross_req,
+            'Scheduled Receipts': sched_rec,
+            'Projected On Hand': poh,
+            'Net Requirements': net_req,
             'Planned Order Receipts': rec,
             'Planned Order Releases': rel,
         }, index=period_labels).T
@@ -278,8 +278,8 @@ if df_kerja is not None:
     st.markdown("---")
     st.subheader("PERFORMANCE COMPARISON OF ALL METHODS")
     biaya_dict = {'L4L': total_l4l, 'LUC': total_luc, 'EOQ': total_eoq}
-    best_m     = min(biaya_dict, key=biaya_dict.get)
-    cols       = st.columns(3)
+    best_m = min(biaya_dict, key=biaya_dict.get)
+    cols = st.columns(3)
     for idx, (name, val) in enumerate(biaya_dict.items()):
         cols[idx].metric(
             f"TOTAL COST {name}",
