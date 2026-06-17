@@ -131,27 +131,26 @@ st.markdown("---")
 st.sidebar.header("⚙️ Control Dashboard")
 
 st.sidebar.subheader("💰 Financial Factors")
-setup_cost = st.sidebar.number_input("Setup Cost", min_value=0.0, value=0.0, step=5.0)
-holding_cost = st.sidebar.number_input("Holding Cost (per unit/period)", min_value=0.0, value=0.0, step=0.5)
+setup_cost = st.sidebar.number_input("Setup Cost", min_value=0.0, value=100.0, step=5.0)
+holding_cost = st.sidebar.number_input("Holding Cost (per unit/period)", min_value=0.0, value=1.0, step=0.5)
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
 st.sidebar.subheader("🗂️ Inventory Profiles")
-initial_inv = st.sidebar.number_input("Initial Inventory", min_value=0, value=0, step=5)
-safety_stock = st.sidebar.number_input("Safety Stock", min_value=0, value=0, step=1)
-lead_time = st.sidebar.number_input("Lead Time", min_value=0, value=0, step=1)
+initial_inv = st.sidebar.number_input("Initial Inventory", min_value=0, value=20, step=5)
+safety_stock = st.sidebar.number_input("Safety Stock", min_value=0, value=5, step=1)
+lead_time = st.sidebar.number_input("Lead Time", min_value=0, value=1, step=1)
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
 st.sidebar.subheader("🏭 Operational Boundaries")
-max_capacity = st.sidebar.number_input("Maximum Warehouse Capacity (Units)", min_value=1, value=1, step=10)
+max_capacity = st.sidebar.number_input("Maximum Warehouse Capacity (Units)", min_value=1, value=500, step=10)
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-# MOQ sebagai Universal Constraint (bukan metode lot sizing)
 st.sidebar.subheader("🔧 Universal Constraint")
 use_moq = st.sidebar.checkbox("Apply MOQ Constraint to All Methods", value=False)
-moq_value = st.sidebar.number_input("MOQ Value (units)", min_value=1, value=1, step=5, disabled=not use_moq)
+moq_value = st.sidebar.number_input("MOQ Value (units)", min_value=1, value=50, step=5, disabled=not use_moq)
 moq_val = moq_value if use_moq else 0
 
 
@@ -237,10 +236,13 @@ if input_method == "Upload File":
             st.stop()
             
 elif input_method == "Manual Entry":
-    num_periods_input = st.number_input("Planning Horizon Length (Periods):", min_value=1, max_value=52, value=1, step=1)
+    num_periods_input = st.number_input("Planning Horizon Length (Periods):", min_value=1, max_value=52, value=10, step=1)
     
-    # Default selalu 0 — user mengisi sendiri dari awal
-    default_gr = [0] * num_periods_input
+    default_gr = [35, 30, 40, 0, 10, 40, 30, 0, 30, 55]
+    if num_periods_input > len(default_gr):
+        default_gr += [0] * (num_periods_input - len(default_gr))
+    else:
+        default_gr = default_gr[:num_periods_input]
         
     init_data = {
         'Period': [f"P{i+1}" for i in range(num_periods_input)],
@@ -288,7 +290,7 @@ if df_workbench is not None and not df_workbench.empty:
     st.subheader("⚙️ Lot Sizing Operational Performance Strategy Modules")
 
     if use_moq:
-        st.info(f"🔧 **MOQ Constraint Active ({moq_val} units):** Applied as a post-fulfillment adjustment to all method order quantities.")
+        st.info(f"🔧 **MOQ Constraint Active ({moq_val} units):** Applied as a post-fulfillment adjustment to all method order quantities. Note: Each method's lot grouping decision is based on original net requirements; MOQ scales up individual orders to meet the minimum threshold, and the resulting surplus inventory is reflected in the Projected On Hand.")
 
     tabs_list = st.tabs([
         "📋 L4L", "🎯 EOQ", "⏱️ POQ", "🔒 FOQ", "📅 FPR",
@@ -296,20 +298,20 @@ if df_workbench is not None and not df_workbench.empty:
     ])
 
     with tabs_list[3]:
-        fixed_lot_size = st.number_input("Enter Fixed Order Size (FOQ Multiplier):", min_value=0, value=0, step=5)
+        fixed_lot_size = st.number_input("Enter Fixed Order Size (FOQ Multiplier):", min_value=0, value=50, step=5)
 
     with tabs_list[4]:
         fpr_interval = st.number_input(
             "FPR Interval (periods):",
-            min_value=0, max_value=len(gross_req), value=0, step=1,
-            help="Isi angka > 0 untuk mengaktifkan kalkulasi FPR."
+            min_value=1, max_value=len(gross_req), value=3, step=1,
+            help="Determines how many periods are grouped into a single ordering window."
         )
 
 
     # ==========================================
     # CORE PROCESSING MATHEMATICAL ALGORITHMS
     # ==========================================
-    def calculate_multi_mrp(demands, s_receipts, setup, hold, init_inv, ss, lt, f_lot, moq_val, fpr_interval, build_trace=True):
+    def calculate_multi_mrp(demands, s_receipts, setup, hold, init_inv, ss, lt, f_lot, moq_v, fpr_int, build_trace=True):
         n = len(demands)
         
         net_req = []
@@ -324,11 +326,11 @@ if df_workbench is not None and not df_workbench.empty:
                 net_req.append(0)
                 prev_inv = available_stock - demands[i]
 
-        def generate_poh_and_release(rec_lot, moq_v=0):
+        def generate_poh_and_release(rec_lot, moq_c=0):
             actual_rec = []
             for i in range(n):
                 raw = rec_lot[i]
-                actual = max(raw, moq_v) if (moq_v > 0 and raw > 0) else raw
+                actual = max(raw, moq_c) if (moq_c > 0 and raw > 0) else raw
                 actual_rec.append(actual)
 
             poh = []
@@ -347,73 +349,16 @@ if df_workbench is not None and not df_workbench.empty:
 
         # 1. LOT-FOR-LOT (L4L)
         l4l_rec = list(net_req)
-        l4l_poh, l4l_rel, l4l_actual = generate_poh_and_release(l4l_rec, moq_val)
+        l4l_poh, l4l_rel, l4l_actual = generate_poh_and_release(l4l_rec, moq_v)
         c_l4l_setup = sum(1 for x in l4l_actual if x > 0) * setup
         c_l4l_hold  = sum(max(0, x) for x in l4l_poh) * hold
 
-        # 2. LEAST UNIT COST (LUC)
-        luc_rec = [0] * n
-        luc_trace_logs = []
-        idx = 0
-        while idx < n:
-            if net_req[idx] == 0:
-                idx += 1
-                continue
-            best_k = idx
-            min_uc = float('inf')
-            acc_d, acc_h = 0, 0
-            t_log = []
-            
-            for k in range(idx, n):
-                acc_d += net_req[k]
-                acc_h += net_req[k] * hold * (k - idx)
-                t_cost = setup + acc_h
-                uc = t_cost / acc_d if acc_d > 0 else float('inf')
-                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
-                
-                if uc < min_uc:
-                    min_uc, best_k = uc, k
-                    if build_trace:
-                        t_log.append({
-                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
-                            'Unit Cost': uc, 'Status': 'Feasible'
-                        })
-                else:
-                    if build_trace:
-                        t_log.append({
-                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
-                            'Unit Cost': uc, 'Status': 'Stop ⚠️ (Limit Exceeded)'
-                        })
-                    break
-            
-            if build_trace:
-                df_step = pd.DataFrame(t_log)
-                if not df_step.empty:
-                    stop_exists = df_step['Status'].str.contains('Stop').any()
-                    if stop_exists:
-                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
-                        if stop_idx > 0:
-                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
-                    else:
-                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
-                luc_trace_logs.append(df_step)
-                
-            luc_rec[idx] = sum(net_req[idx:best_k+1])
-            idx = best_k + 1
-            
-        luc_poh, luc_rel, luc_actual = generate_poh_and_release(luc_rec, moq_val)
-        c_luc_setup = sum(1 for x in luc_actual if x > 0) * setup
-        c_luc_hold  = sum(max(0, x) for x in luc_poh) * hold
-
-        # 3. ECONOMIC ORDER QUANTITY (EOQ)
+        # 2. ECONOMIC ORDER QUANTITY (EOQ)
         avg_demand_gross = np.mean(demands)
         eoq_raw_size = math.sqrt((2 * avg_demand_gross * setup) / hold) if hold > 0 else 0
         eoq_size = math.ceil(eoq_raw_size)
         eoq_rec = [0] * n
         rem_stok = 0
-        
         if hold > 0:
             for i in range(n):
                 if net_req[i] > 0:
@@ -424,161 +369,30 @@ if df_workbench is not None and not df_workbench.empty:
                         rem_stok = (eoq_rec[i] + rem_stok) - net_req[i]
                     else:
                         rem_stok -= net_req[i]
-                    
-        eoq_poh, eoq_rel, eoq_actual = generate_poh_and_release(eoq_rec, moq_val)
+        eoq_poh, eoq_rel, eoq_actual = generate_poh_and_release(eoq_rec, moq_v)
         c_eoq_setup = sum(1 for x in eoq_actual if x > 0) * setup
         c_eoq_hold  = sum(max(0, x) for x in eoq_poh) * hold
 
-        # 4. PART PERIOD BALANCING (PPB)
-        ppb_rec = [0] * n
-        ppb_trace_logs = []
-        epp_limit = setup / hold if hold > 0 else float('inf')
-        
-        idx = 0
-        while idx < n:
-            if net_req[idx] == 0:
-                idx += 1
-                continue
-            best_k = idx
-            cum_part_period = 0
-            acc_d = 0
-            t_log = []
-            
-            for k in range(idx, n):
-                part_period_k = net_req[k] * (k - idx)
-                new_cum_part_period = cum_part_period + part_period_k
-                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
-                
-                if new_cum_part_period <= epp_limit:
-                    acc_d += net_req[k]
-                    cum_part_period = new_cum_part_period
-                    best_k = k
-                    if build_trace:
-                        t_log.append({
-                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                            'Target EPP': epp_limit, 'Accumulated Part-Period': cum_part_period,
-                            'Status': 'Feasible'
-                        })
-                else:
-                    dist_before = abs(cum_part_period - epp_limit)
-                    dist_after  = abs(new_cum_part_period - epp_limit)
-                    
-                    if dist_after < dist_before:
-                        acc_d += net_req[k]
-                        cum_part_period = new_cum_part_period
-                        best_k = k
-                        if build_trace:
-                            t_log.append({
-                                'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                                'Target EPP': epp_limit, 'Accumulated Part-Period': cum_part_period,
-                                'Status': 'Feasible (Closer Beyond Limit)'
-                            })
-                    else:
-                        if build_trace:
-                            t_log.append({
-                                'Periods Covered': covered_periods_str, 'Total Units': acc_d + net_req[k],
-                                'Target EPP': epp_limit, 'Accumulated Part-Period': new_cum_part_period,
-                                'Status': 'Stop ⚠️ (Limit Exceeded)'
-                            })
-                        break
-                    
-            if build_trace:
-                df_step = pd.DataFrame(t_log)
-                if not df_step.empty:
-                    stop_exists = df_step['Status'].str.contains('Stop').any()
-                    if stop_exists:
-                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
-                        if stop_idx > 0:
-                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
-                    else:
-                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
-                ppb_trace_logs.append(df_step)
-                
-            ppb_rec[idx] = sum(net_req[idx:best_k+1])
-            idx = best_k + 1
-            
-        ppb_poh, ppb_rel, ppb_actual = generate_poh_and_release(ppb_rec, moq_val)
-        c_ppb_setup = sum(1 for x in ppb_actual if x > 0) * setup
-        c_ppb_hold  = sum(max(0, x) for x in ppb_poh) * hold
-
-        # 5. SILVER-MEAL (SM)
-        sm_rec = [0] * n
-        sm_trace_logs = []
-        idx = 0
-        while idx < n:
-            if net_req[idx] == 0:
-                idx += 1
-                continue
-            best_k = idx
-            min_avg_cost = float('inf')
-            acc_d, acc_h = 0, 0
-            t_log = []
-            
-            for k in range(idx, n):
-                acc_d += net_req[k]
-                acc_h += net_req[k] * hold * (k - idx)
-                t_cost = setup + acc_h
-                n_periods_covered = k - idx + 1
-                avg_cost = t_cost / n_periods_covered
-                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
-                
-                if avg_cost < min_avg_cost:
-                    min_avg_cost = avg_cost
-                    best_k = k
-                    if build_trace:
-                        t_log.append({
-                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
-                            'Average Cost/Period': avg_cost, 'Status': 'Feasible'
-                        })
-                else:
-                    if build_trace:
-                        t_log.append({
-                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
-                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
-                            'Average Cost/Period': avg_cost, 'Status': 'Stop ⚠️ (Limit Exceeded)'
-                        })
-                    break
-                    
-            if build_trace:
-                df_step = pd.DataFrame(t_log)
-                if not df_step.empty:
-                    stop_exists = df_step['Status'].str.contains('Stop').any()
-                    if stop_exists:
-                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
-                        if stop_idx > 0:
-                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
-                    else:
-                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
-                sm_trace_logs.append(df_step)
-                
-            sm_rec[idx] = sum(net_req[idx:best_k+1])
-            idx = best_k + 1
-            
-        sm_poh, sm_rec, sm_rel = generate_poh_and_release(sm_rec, moq_val)
-        c_sm_setup = sum(1 for x in sm_rec if x > 0) * setup
-        c_sm_hold  = sum(max(0, x) for x in sm_poh) * hold
-
-        # 6. PERIOD ORDER QUANTITY (POQ)
+        # 3. PERIOD ORDER QUANTITY (POQ)
         poq_raw_interval = eoq_size / avg_demand_gross if avg_demand_gross > 0 and eoq_size > 0 else 1
         poq_interval = max(1, round(poq_raw_interval))
-        
         poq_rec = [0] * n
         i = 0
         while i < n:
+            if i < n and net_req[i] == 0:
+                i += 1
+                continue
             window_end = min(i + poq_interval, n)
             total_window_net = sum(net_req[i:window_end])
             if total_window_net > 0:
                 poq_rec[i] = total_window_net
             i = window_end
-            
-        poq_poh, poq_rec, poq_rel = generate_poh_and_release(poq_rec, moq_val)
-        c_poq_setup = sum(1 for x in poq_rec if x > 0) * setup
+        poq_poh, poq_rel, poq_actual = generate_poh_and_release(poq_rec, moq_v)
+        c_poq_setup = sum(1 for x in poq_actual if x > 0) * setup
         c_poq_hold  = sum(max(0, x) for x in poq_poh) * hold
 
-        # 7. FIXED ORDER QUANTITY (FOQ)
+        # 4. FIXED ORDER QUANTITY (FOQ)
         foq_rec = [0] * n
-        c_foq_setup, c_foq_hold = 0.0, 0.0
         if f_lot > 0:
             rem_foq_stok = 0
             for i in range(n):
@@ -590,13 +404,79 @@ if df_workbench is not None and not df_workbench.empty:
                         rem_foq_stok = (foq_rec[i] + rem_foq_stok) - net_req[i]
                     else:
                         rem_foq_stok -= net_req[i]
+        foq_poh, foq_rel, foq_actual = generate_poh_and_release(foq_rec, moq_v)
+        c_foq_setup = sum(1 for x in foq_actual if x > 0) * setup if f_lot > 0 else 0
+        c_foq_hold  = sum(max(0, x) for x in foq_poh) * hold if f_lot > 0 else 0
 
-        foq_poh, foq_rec, foq_rel = generate_poh_and_release(foq_rec, moq_val)
-        if f_lot > 0:
-            c_foq_setup = sum(1 for x in foq_rec if x > 0) * setup
-            c_foq_hold  = sum(max(0, x) for x in foq_poh) * hold
+        # 5. FIXED PERIOD REQUIREMENTS (FPR)
+        fpr_rec = [0] * n
+        i = 0
+        while i < n:
+            if i < n and net_req[i] == 0:
+                i += 1
+                continue
+            window_end = min(i + fpr_int, n)
+            total_window_net = sum(net_req[i:window_end])
+            if total_window_net > 0:
+                fpr_rec[i] = total_window_net
+            i = window_end
+        fpr_poh, fpr_rel, fpr_actual = generate_poh_and_release(fpr_rec, moq_v)
+        c_fpr_setup = sum(1 for x in fpr_actual if x > 0) * setup
+        c_fpr_hold  = sum(max(0, x) for x in fpr_poh) * hold
 
-        # 8. LEAST TOTAL COST (LTC)
+        # 6. INCREMENTAL UNIT COST (IUC)
+        iuc_rec = [0] * n
+        iuc_trace_logs = []
+        idx = 0
+        while idx < n:
+            if net_req[idx] == 0:
+                idx += 1
+                continue
+            best_k = idx
+            t_log = []
+            prev_margin_cost = -1
+            
+            for k in range(idx, n):
+                added_units = net_req[k]
+                added_holding = net_req[k] * hold * (k - idx)
+                margin_cost = added_holding / added_units if added_units > 0 else 0
+                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
+                
+                if prev_margin_cost == -1 or margin_cost >= prev_margin_cost:
+                    best_k = k
+                    prev_margin_cost = margin_cost
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Incremental Units': added_units,
+                            'Incremental Holding': added_holding, 'Marginal Cost/Unit': margin_cost,
+                            'Status': 'Feasible'
+                        })
+                else:
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Incremental Units': added_units,
+                            'Incremental Holding': added_holding, 'Marginal Cost/Unit': margin_cost,
+                            'Status': 'Stop ⚠️ (Cost Decreased)'
+                        })
+                    break
+            if build_trace:
+                df_step = pd.DataFrame(t_log)
+                if not df_step.empty:
+                    stop_exists = df_step['Status'].str.contains('Stop').any()
+                    if stop_exists:
+                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
+                        if stop_idx > 0:
+                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
+                    else:
+                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
+                    iuc_trace_logs.append(df_step)
+            iuc_rec[idx] = sum(net_req[idx:best_k+1])
+            idx = best_k + 1
+        iuc_poh, iuc_rel, iuc_actual = generate_poh_and_release(iuc_rec, moq_v)
+        c_iuc_setup = sum(1 for x in iuc_actual if x > 0) * setup
+        c_iuc_hold  = sum(max(0, x) for x in iuc_poh) * hold
+
+        # 7. LEAST TOTAL COST (LTC)
         ltc_rec = [0] * n
         ltc_trace_logs = []
         idx = 0
@@ -628,7 +508,6 @@ if df_workbench is not None and not df_workbench.empty:
                             'Setup Cost': setup, 'Holding Cost': acc_h, 'Status': 'Stop ⚠️ (Holding ≥ Setup)'
                         })
                     break
-                    
             if build_trace:
                 df_step = pd.DataFrame(t_log)
                 if not df_step.empty:
@@ -640,206 +519,339 @@ if df_workbench is not None and not df_workbench.empty:
                     else:
                         df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
                 ltc_trace_logs.append(df_step)
-                
             ltc_rec[idx] = sum(net_req[idx:best_k+1])
             idx = best_k + 1
-            
-        ltc_poh, ltc_rec, ltc_rel = generate_poh_and_release(ltc_rec, moq_val)
-        c_ltc_setup = sum(1 for x in ltc_rec if x > 0) * setup
+        ltc_poh, ltc_rel, ltc_actual = generate_poh_and_release(ltc_rec, moq_v)
+        c_ltc_setup = sum(1 for x in ltc_actual if x > 0) * setup
         c_ltc_hold  = sum(max(0, x) for x in ltc_poh) * hold
 
-        # 9. FIXED PERIOD REQUIREMENTS (FPR)
-        fpr_rec = [0] * n
-        if fpr_interval > 0:
-            i = 0
-            while i < n:
-                window_end = min(i + fpr_interval, n)
-                fpr_rec[i] = sum(net_req[i:window_end])
-                i = window_end
-        fpr_poh, fpr_rec, fpr_rel = generate_poh_and_release(fpr_rec, moq_val)
-        c_fpr_setup = sum(1 for x in fpr_rec if x > 0) * setup
-        c_fpr_hold  = sum(max(0, x) for x in fpr_poh) * hold
-
-        # 10. INCREMENTAL UNIT COST (IUC)
-        iuc_rec = [0] * n
+        # 8. LEAST UNIT COST (LUC)
+        luc_rec = [0] * n
+        luc_trace_logs = []
         idx = 0
         while idx < n:
             if net_req[idx] == 0:
                 idx += 1
                 continue
             best_k = idx
-            prev_margin_cost = -1
+            min_uc = float('inf')
+            acc_d, acc_h = 0, 0
+            t_log = []
             for k in range(idx, n):
-                margin_cost_k = net_req[k] * hold * (k - idx)
-                if prev_margin_cost == -1 or margin_cost_k >= prev_margin_cost:
-                    best_k = k
-                    prev_margin_cost = margin_cost_k
+                acc_d += net_req[k]
+                acc_h += net_req[k] * hold * (k - idx)
+                t_cost = setup + acc_h
+                uc = t_cost / acc_d if acc_d > 0 else float('inf')
+                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
+                
+                if uc < min_uc:
+                    min_uc, best_k = uc, k
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
+                            'Unit Cost': uc, 'Status': 'Feasible'
+                        })
                 else:
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
+                            'Unit Cost': uc, 'Status': 'Stop ⚠️ (Limit Exceeded)'
+                        })
                     break
-            iuc_rec[idx] = sum(net_req[idx:best_k+1])
+            if build_trace:
+                df_step = pd.DataFrame(t_log)
+                if not df_step.empty:
+                    stop_exists = df_step['Status'].str.contains('Stop').any()
+                    if stop_exists:
+                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
+                        if stop_idx > 0:
+                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
+                    else:
+                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
+                luc_trace_logs.append(df_step)
+            luc_rec[idx] = sum(net_req[idx:best_k+1])
             idx = best_k + 1
-        iuc_poh, iuc_rec, iuc_rel = generate_poh_and_release(iuc_rec, moq_val)
-        c_iuc_setup = sum(1 for x in iuc_rec if x > 0) * setup
-        c_iuc_hold  = sum(max(0, x) for x in iuc_poh) * hold
+        luc_poh, luc_rel, luc_actual = generate_poh_and_release(luc_rec, moq_v)
+        c_luc_setup = sum(1 for x in luc_actual if x > 0) * setup
+        c_luc_hold  = sum(max(0, x) for x in luc_poh) * hold
+
+        # 9. PART PERIOD BALANCING (PPB)
+        ppb_rec = [0] * n
+        ppb_trace_logs = []
+        epp_limit = setup / hold if hold > 0 else float('inf')
+        idx = 0
+        while idx < n:
+            if net_req[idx] == 0:
+                idx += 1
+                continue
+            best_k = idx
+            cum_part_period = 0
+            acc_d = 0
+            t_log = []
+            for k in range(idx, n):
+                part_period_k = net_req[k] * (k - idx)
+                new_cum_part_period = cum_part_period + part_period_k
+                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
+                
+                if new_cum_part_period <= epp_limit:
+                    acc_d += net_req[k]
+                    cum_part_period = new_cum_part_period
+                    best_k = k
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                            'Target EPP': epp_limit, 'Accumulated Part-Period': cum_part_period,
+                            'Status': 'Feasible'
+                        })
+                else:
+                    dist_before = abs(cum_part_period - epp_limit)
+                    dist_after  = abs(new_cum_part_period - epp_limit)
+                    if dist_after < dist_before:
+                        acc_d += net_req[k]
+                        cum_part_period = new_cum_part_period
+                        best_k = k
+                        if build_trace:
+                            t_log.append({
+                                'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                                'Target EPP': epp_limit, 'Accumulated Part-Period': cum_part_period,
+                                'Status': 'Feasible (Closer Beyond Limit)'
+                            })
+                    else:
+                        if build_trace:
+                            t_log.append({
+                                'Periods Covered': covered_periods_str, 'Total Units': acc_d + net_req[k],
+                                'Target EPP': epp_limit, 'Accumulated Part-Period': new_cum_part_period,
+                                'Status': 'Stop ⚠️ (Limit Exceeded)'
+                            })
+                    break
+            if build_trace:
+                df_step = pd.DataFrame(t_log)
+                if not df_step.empty:
+                    stop_exists = df_step['Status'].str.contains('Stop').any()
+                    if stop_exists:
+                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
+                        if stop_idx > 0:
+                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
+                    else:
+                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
+                ppb_trace_logs.append(df_step)
+            ppb_rec[idx] = sum(net_req[idx:best_k+1])
+            idx = best_k + 1
+        ppb_poh, ppb_rel, ppb_actual = generate_poh_and_release(ppb_rec, moq_v)
+        c_ppb_setup = sum(1 for x in ppb_actual if x > 0) * setup
+        c_ppb_hold  = sum(max(0, x) for x in ppb_poh) * hold
+
+        # 10. SILVER-MEAL (SM)
+        sm_rec = [0] * n
+        sm_trace_logs = []
+        idx = 0
+        while idx < n:
+            if net_req[idx] == 0:
+                idx += 1
+                continue
+            best_k = idx
+            min_avg_cost = float('inf')
+            acc_d, acc_h = 0, 0
+            t_log = []
+            for k in range(idx, n):
+                acc_d += net_req[k]
+                acc_h += net_req[k] * hold * (k - idx)
+                t_cost = setup + acc_h
+                n_periods_covered = k - idx + 1
+                avg_cost = t_cost / n_periods_covered
+                covered_periods_str = ", ".join([period_labels[m] for m in range(idx, k+1)])
+                
+                if avg_cost < min_avg_cost:
+                    min_avg_cost = avg_cost
+                    best_k = k
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
+                            'Average Cost/Period': avg_cost, 'Status': 'Feasible'
+                        })
+                else:
+                    if build_trace:
+                        t_log.append({
+                            'Periods Covered': covered_periods_str, 'Total Units': acc_d,
+                            'Setup Cost': setup, 'Holding Cost': acc_h, 'Total Cost': t_cost,
+                            'Average Cost/Period': avg_cost, 'Status': 'Stop ⚠️ (Limit Exceeded)'
+                        })
+                    break
+            if build_trace:
+                df_step = pd.DataFrame(t_log)
+                if not df_step.empty:
+                    stop_exists = df_step['Status'].str.contains('Stop').any()
+                    if stop_exists:
+                        stop_idx = df_step[df_step['Status'].str.contains('Stop')].index[0]
+                        if stop_idx > 0:
+                            df_step.at[stop_idx - 1, 'Status'] = 'Selected (Optimal)'
+                    else:
+                        df_step.at[df_step.index[-1], 'Status'] = 'Horizon End (Optimal)'
+                sm_trace_logs.append(df_step)
+            sm_rec[idx] = sum(net_req[idx:best_k+1])
+            idx = best_k + 1
+        sm_poh, sm_rel, sm_actual = generate_poh_and_release(sm_rec, moq_v)
+        c_sm_setup = sum(1 for x in sm_actual if x > 0) * setup
+        c_sm_hold  = sum(max(0, x) for x in sm_poh) * hold
 
         # 11. WAGNER-WHITIN (WW)
-        ww_rec = [0] * n
         f = [0.0] * (n + 1)
-        j_best = [0] * (n + 1)
-        for t in range(1, n + 1):
+        parent = [-1] * (n + 1)
+        f[0] = 0.0
+        for j in range(1, n + 1):
             min_val = float('inf')
-            best_j = 0
-            for j in range(1, t + 1):
-                h_cost = 0
-                for k in range(j, t + 1):
-                    h_cost += net_req[k - 1] * hold * (k - j)
-                cost_j_t = f[j - 1] + setup + h_cost
-                if cost_j_t < min_val:
-                    min_val = cost_j_t
-                    best_j = j
-            f[t] = min_val
-            j_best[t] = best_j
+            best_i = -1
+            for i in range(1, j + 1):
+                h_cost = 0.0
+                for t in range(i, j + 1):
+                    h_cost += net_req[t-1] * hold * (t - i)
+                curr_cost = f[i-1] + setup + h_cost
+                if curr_cost < min_val:
+                    min_val = curr_cost
+                    best_i = i
+            f[j] = min_val
+            parent[j] = best_i
 
-        t_curr = n
-        while t_curr > 0:
-            j_start = j_best[t_curr]
-            qty = sum(net_req[j_start-1:t_curr])
-            ww_rec[j_start - 1] = qty
-            t_curr = j_start - 1
-        ww_poh, ww_rec, ww_rel = generate_poh_and_release(ww_rec, moq_val)
-        c_ww_setup = sum(1 for x in ww_rec if x > 0) * setup
+        ww_rec = [0] * n
+        curr = n
+        while curr > 0:
+            p_start = parent[curr]
+            tot_net = sum(net_req[p_start-1:curr])
+            ww_rec[p_start-1] = tot_net
+            curr = p_start - 1
+            
+        ww_poh, ww_rel, ww_actual = generate_poh_and_release(ww_rec, moq_v)
+        c_ww_setup = sum(1 for x in ww_actual if x > 0) * setup
         c_ww_hold  = sum(max(0, x) for x in ww_poh) * hold
 
-        return (l4l_poh, l4l_actual, l4l_rel, c_l4l_setup + c_l4l_hold,
-                eoq_poh, eoq_actual, eoq_rel, c_eoq_setup + c_eoq_hold,
-                poq_poh, poq_rec, poq_rel, c_poq_setup + c_poq_hold,
-                foq_poh, foq_rec, foq_rel, c_foq_setup + c_foq_hold,
-                fpr_poh, fpr_rec, fpr_rel, c_fpr_setup + c_fpr_hold, 
-                iuc_poh, iuc_rec, iuc_rel, c_iuc_setup + c_iuc_hold, 
-                ltc_poh, ltc_rec, ltc_rel, c_ltc_setup + c_ltc_hold,
-                luc_poh, luc_actual, luc_rel, c_luc_setup + c_luc_hold,
-                ppb_poh, ppb_actual, ppb_rel, c_ppb_setup + c_ppb_hold,
-                sm_poh, sm_rec, sm_rel, c_sm_setup + c_sm_hold,
-                ww_poh, ww_rec, ww_rel, c_ww_setup + c_ww_hold,
-                net_req, luc_trace_logs, ppb_trace_logs, sm_trace_logs, ltc_trace_logs, poq_interval)
+        # Compile Master Dictionary
+        return {
+            'L4L': (l4l_actual, l4l_poh, l4l_rel, c_l4l_setup, c_l4l_hold, None),
+            'EOQ': (eoq_actual, eoq_poh, eoq_rel, c_eoq_setup, c_eoq_hold, None),
+            'POQ': (poq_actual, poq_poh, poq_rel, c_poq_setup, c_poq_hold, None),
+            'FOQ': (foq_actual, foq_poh, foq_rel, c_foq_setup, c_foq_hold, None),
+            'FPR': (fpr_actual, fpr_poh, fpr_rel, c_fpr_setup, c_fpr_hold, None),
+            'IUC': (iuc_actual, iuc_poh, iuc_rel, c_iuc_setup, c_iuc_hold, iuc_trace_logs),
+            'LTC': (ltc_actual, ltc_poh, ltc_rel, c_ltc_setup, c_ltc_hold, ltc_trace_logs),
+            'LUC': (luc_actual, luc_poh, luc_rel, c_luc_setup, c_luc_hold, luc_trace_logs),
+            'PPB': (ppb_actual, ppb_poh, ppb_rel, c_ppb_setup, c_ppb_hold, ppb_trace_logs),
+            'SM':  (sm_actual, sm_poh, sm_rel, c_sm_setup, c_sm_hold, sm_trace_logs),
+            'WW':  (ww_actual, ww_poh, ww_rel, c_ww_setup, c_ww_hold, f)
+        }
 
-    # Eksekusi kalkulasi mesin inti
-    (l4l_poh, l4l_rec, l4l_rel, total_l4l,
-     eoq_poh, eoq_rec, eoq_rel, total_eoq,
-     poq_poh, poq_rec, poq_rel, total_poq,
-     foq_poh, foq_rec, foq_rel, total_foq,
-     fpr_poh, fpr_rec, fpr_rel, total_fpr,
-     iuc_poh, iuc_rec, iuc_rel, total_iuc,
-     ltc_poh, ltc_rec, ltc_rel, total_ltc,
-     luc_poh, luc_rec, luc_rel, total_luc,
-     ppb_poh, ppb_rec, ppb_rel, total_ppb,
-     sm_poh, sm_rec, sm_rel, total_sm,
-     ww_poh, ww_rec, ww_rel, total_ww,
-     net_req, luc_logs, ppb_logs, sm_logs, ltc_logs, poq_int) = calculate_multi_mrp(
-         gross_req, sched_rec, setup_cost, holding_cost, initial_inv, safety_stock, lead_time, fixed_lot_size, moq_val, fpr_interval
-     )
+    # RUN Master Calculations
+    mrp_results = calculate_multi_mrp(
+        gross_req, sched_rec, setup_cost, holding_cost, 
+        initial_inv, safety_stock, lead_time, fixed_lot_size, moq_val, fpr_interval
+    )
 
-    # ==========================================
-    # FUNCTION RENDERING MATRIX GRID (BARIS NR DIHAPUS)
-    # ==========================================
-    def render_mrp_grid(poh, rec, rel):
-        df = pd.DataFrame({
-            'Gross Requirements': gross_req,
-            'Scheduled Receipts': sched_rec,
-            'Projected On Hand': poh,
-            'Planned Order Receipts': rec,
-            'Planned Order Releases': rel,
-        }, index=period_labels).T
-        st.dataframe(style_mrp_grid(df, max_capacity, safety_stock), use_container_width=True)
+    # Dictionary Keys Mapping for Rendering Tabs
+    method_keys = ["L4L", "EOQ", "POQ", "FOQ", "FPR", "IUC", "LTC", "LUC", "PPB", "SM", "WW"]
 
-    # RENDERING INTERFACE PER TAB UNIT
-    with tabs_list[0]:
-        st.markdown("### 📋 Lot-for-Lot (L4L) Matrix")
-        render_mrp_grid(l4l_poh, l4l_rec, l4l_rel)
-    with tabs_list[1]:
-        st.markdown("### 🎯 Economic Order Quantity (EOQ) Matrix")
-        render_mrp_grid(eoq_poh, eoq_rec, eoq_rel)
-    with tabs_list[2]:
-        st.markdown("### ⏱️ Period Order Quantity (POQ) Matrix")
-        st.info(f"💡 Calculated Time Interval Frequency: **{poq_int} periods**")
-        render_mrp_grid(poq_poh, poq_rec, poq_rel)
-    with tabs_list[3]:
-        st.markdown("### 🔒 Fixed Order Quantity (FOQ) Matrix")
-        render_mrp_grid(foq_poh, foq_rec, foq_rel)
-    with tabs_list[4]:
-        st.markdown("### 📅 Fixed Period Requirements (FPR) Matrix")
-        render_mrp_grid(fpr_poh, fpr_rec, fpr_rel)
-    with tabs_list[5]:
-        st.markdown("### 💰 Incremental Unit Cost (IUC) Matrix")
-        render_mrp_grid(iuc_poh, iuc_rec, iuc_rel)
-    with tabs_list[6]:
-        st.markdown("### 💸 Least Total Cost (LTC) Matrix")
-        render_mrp_grid(ltc_poh, ltc_rec, ltc_rel)
-    with tabs_list[7]:
-        st.markdown("### 🔍 Least Unit Cost (LUC) Matrix")
-        render_mrp_grid(luc_poh, luc_rec, luc_rel)
-    with tabs_list[8]:
-        st.markdown("### ⚖️ Part Period Balancing (PPB) Matrix")
-        render_mrp_grid(ppb_poh, ppb_rec, ppb_rel)
-    with tabs_list[9]:
-        st.markdown("### 🚀 Silver-Meal (SM) Matrix")
-        render_mrp_grid(sm_poh, sm_rec, sm_rel)
-    with tabs_list[10]:
-        st.markdown("### 🔬 Wagner-Whitin (WW) Matrix")
-        render_mrp_grid(ww_poh, ww_rec, ww_rel)
+    # Render data inside each operational tab
+    for idx_tab, m_key in enumerate(method_keys):
+        with tabs_list[idx_tab]:
+            actual_rec, poh, rel, c_setup, c_hold, logs = mrp_results[m_key]
+            
+            # Bulding visual grid WITHOUT Net Requirements (NR) row
+            df_mrp_grid = pd.DataFrame({
+                'Gross Requirements': gross_req,
+                'Scheduled Receipts': sched_rec,
+                'Planned Receipts': actual_rec,
+                'Projected On Hand': poh,
+                'Planned Releases': rel
+            }, index=period_labels).T
+            
+            st.markdown(f"##### 📊 {m_key} Material Requirements Planning Grid:")
+            st.dataframe(style_mrp_grid(df_mrp_grid, max_capacity, safety_stock), use_container_width=True)
+            
+            # Print Financial Analysis Cards
+            tc = c_setup + c_hold
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Setup Cost", f"${c_setup:,.2f}")
+            c2.metric("Total Holding Cost", f"${c_hold:,.2f}")
+            c3.metric("Combined Operational Cost", f"${tc:,.2f}")
+            
+            # Render internal calculations trace logs if available
+            if logs is not None and m_key in ["IUC", "LTC", "LUC", "PPB", "SM"]:
+                st.markdown(f"###### 🔍 {m_key} Algorithmic Step-by-Step Optimization Iterations:")
+                for step_idx, df_step in enumerate(logs):
+                    st.text(f"Consolidation Phase Order Cluster #{step_idx + 1}:")
+                    st.dataframe(df_step.style.apply(style_iteration_rows, axis=None), use_container_width=True, hide_index=True)
+            elif logs is not None and m_key == "WW":
+                st.markdown("###### 🔍 Wagner-Whitin Horizon Forward Cost Matrix Vector $f(j)$:")
+                df_ww_vector = pd.DataFrame([logs[1:]], columns=period_labels, index=["Min Cumulative Cost"])
+                st.dataframe(df_ww_vector, use_container_width=True)
 
 
     # ==========================================
-    # 5. PERFORMANCE COMPARISON ANALYSIS WORKBENCH
+    # 5. CROSS-STRATEGY COMPARISON ENGINE
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Strategic Strategy Performance Evaluation")
+    st.subheader("🏁 Multi-Strategy Performance Benchmarking Matrix")
 
-    cost_data = {
-        'Strategy Module': [
-            'Lot-for-Lot (L4L)', 'Economic Order Quantity (EOQ)', 'Period Order Quantity (POQ)',
-            'Fixed Order Quantity (FOQ)', 'Fixed Period Requirements (FPR)', 'Incremental Unit Cost (IUC)',
-            'Least Total Cost (LTC)', 'Least Unit Cost (LUC)', 'Part Period Balancing (PPB)',
-            'Silver-Meal (SM)', 'Wagner-Whitin (WW)'
-        ],
-        'Total Operational Cost (Rp)': [
-            total_l4l, total_eoq, total_poq, total_foq, total_fpr, total_iuc,
-            total_ltc, total_luc, total_ppb, total_sm, total_ww
-        ]
-    }
-    df_comparison = pd.DataFrame(cost_data)
-    df_comparison['Rank'] = df_comparison['Total Operational Cost (Rp)'].rank(method='min', ascending=True).astype(int)
-    df_comparison = df_comparison.sort_values(by='Total Operational Cost (Rp)', ascending=True).reset_index(drop=True)
+    comp_summary_data = []
+    for m_key in method_keys:
+        actual_rec, poh, rel, c_setup, c_hold, _ = mrp_results[m_key]
+        tot_units = sum(actual_rec)
+        tot_orders = sum(1 for x in actual_rec if x > 0)
+        tot_cost = c_setup + c_hold
+        
+        comp_summary_data.append({
+            'Strategy Method': m_key,
+            'Total Units Ordered': tot_units,
+            'Frequency (Orders)': tot_orders,
+            'Total Setup Cost': c_setup,
+            'Total Holding Cost': c_hold,
+            'Grand Total Cost': tot_cost
+        })
 
-    col_tbl, col_cht = st.columns([1, 1])
-    with col_tbl:
-        st.markdown("##### 🏆 Strategy Efficiency Leaderboard:")
-        st.dataframe(df_comparison, use_container_width=True, hide_index=True)
-        
-    with col_cht:
-        st.markdown("##### 📊 Cost Distribution Analysis Chart:")
-        fig, ax = plt.subplots(figsize=(6, 3.6))
-        fig.patch.set_facecolor('#faf8f2')
-        ax.set_facecolor('#ffffff')
-        
-        colors = ['#6a0708' if i == 0 else '#b71c1c' if i < 4 else '#e0dbcd' for i in range(len(df_comparison))]
-        bars = ax.barh(df_comparison['Strategy Module'], df_comparison['Total Operational Cost (Rp)'], color=colors, height=0.6)
-        
-        ax.invert_yaxis()
-        ax.set_xlabel('Total Financial Burden (Rp)', fontsize=9, fontweight='bold', color='#111111')
-        ax.tick_params(axis='both', labelsize=8, colors='#111111')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#e0dbcd')
-        ax.spines['bottom'].set_color('#e0dbcd')
-        ax.grid(axis='x', linestyle='--', alpha=0.5, color='#e0dbcd')
-        
-        for bar in bars:
-            width = bar.get_width()
-            ax.text(width + (max(df_comparison['Total Operational Cost (Rp)']) * 0.01), 
-                    bar.get_y() + bar.get_height()/2, 
-                    f"Rp {width:,.0f}", 
-                    va='center', ha='left', fontsize=8, fontweight='bold', color='#6a0708')
-            
-        plt.tight_layout()
-        st.pyplot(fig)
+    df_comparison = pd.DataFrame(comp_summary_data)
+    df_comparison_styled = df_comparison.style.highlight_min(
+        subset=['Total Setup Cost', 'Total Holding Cost', 'Grand Total Cost'], 
+        color='#e8f5e9'
+    ).highlight_max(
+        subset=['Grand Total Cost'], 
+        color='#ffebee'
+    )
+    
+    st.dataframe(df_comparison_styled, use_container_width=True, hide_index=True)
+
+
+    # ==========================================
+    # 6. ANALYTICAL VISUALIZATION CHART
+    # ==========================================
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📈 Financial Trade-offs Comparison Data Chart")
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    methods_list = df_comparison['Strategy Method'].tolist()
+    setup_vector = df_comparison['Total Setup Cost'].tolist()
+    holding_vector = df_comparison['Total Holding Cost'].tolist()
+
+    x_indexes = np.arange(len(methods_list))
+    bar_width = 0.4
+
+    # Theme colors integration matching clean CSS setup
+    ax.bar(x_indexes - bar_width/2, setup_vector, bar_width, label='Total Setup Cost', color='#6a0708')
+    ax.bar(x_indexes + bar_width/2, holding_vector, bar_width, label='Total Holding Cost', color='#e0dbcd')
+
+    ax.set_ylabel('Financial Cost ($)', fontsize=11, fontweight='bold', color='#111111')
+    ax.set_title('Financial Cost Dynamics: Setup Cost vs Holding Cost Framework', fontsize=12, fontweight='bold', color='#6a0708')
+    ax.set_xticks(x_indexes)
+    ax.set_xticklabels(methods_list, fontweight='bold')
+    ax.legend(frameon=True, facecolor='#ffffff', edgecolor='#e0dbcd')
+    ax.grid(axis='y', linestyle='--', alpha=0.5)
+    
+    # Chart styling to blend smoothly with container layout 
+    fig.patch.set_facecolor('#faf8f2')
+    ax.set_facecolor('#ffffff')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#e0dbcd')
+    ax.spines['bottom'].set_color('#e0dbcd')
+
+    st.pyplot(fig)
