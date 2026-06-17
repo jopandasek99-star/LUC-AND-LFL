@@ -311,22 +311,23 @@ if df_workbench is not None and not df_workbench.empty:
         n = len(demands)
         
         # =========================================================================
-        # FIXED: Net Requirements Matrix Logic (NR = 0 ketika stok mencukupi)
+        # REVISED & FIXED: Standard Dynamic Net Requirements Calculation
         # =========================================================================
         net_req = []
-        prev_inv = init_inv
+        current_on_hand = init_inv
         
         for i in range(n):
-            available_stock = prev_inv + s_receipts[i]
+            available_stock = current_on_hand + s_receipts[i]
+            needed_stock = demands[i] + ss
             
-            # Cek apakah stok awal + jadwal penerimaan bisa menutup demand + safety stock
-            if available_stock >= (demands[i] + ss):
+            if available_stock >= needed_stock:
                 net_req.append(0)
-                prev_inv = available_stock - demands[i]
+                current_on_hand = available_stock - demands[i]
             else:
-                net_val = (demands[i] + ss) - available_stock
+                net_val = needed_stock - available_stock
                 net_req.append(net_val)
-                prev_inv = ss
+                # Sisa stok riil sebelum kedatangan PO Receipt baru adalah sisa dari pengurangan demand murni
+                current_on_hand = max(0, available_stock - demands[i])
 
         # ==========================================
         # generate_poh_and_release
@@ -339,7 +340,7 @@ if df_workbench is not None and not df_workbench.empty:
                 actual = max(raw, moq_v) if (moq_v > 0 and raw > 0) else raw
                 actual_rec.append(actual)
 
-            # Step 2: hitung POH dari actual_rec
+            # Step 2: hitung POH riil berdasarkan actual_rec yang masuk
             poh = []
             r_inv = init_inv
             for i in range(n):
@@ -674,7 +675,7 @@ if df_workbench is not None and not df_workbench.empty:
         c_ltc_setup = sum(1 for x in ltc_actual if x > 0) * setup
         c_ltc_hold  = sum(max(0, x) for x in ltc_poh) * hold
 
-        # Return bundle data (Disederhanakan sesuai kebutuhan render streamlit)
+        # Return bundle data
         return {
             'net_req': net_req,
             'l4l': (l4l_actual, l4l_poh, l4l_rel, c_l4l_setup, c_l4l_hold),
