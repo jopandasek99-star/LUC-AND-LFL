@@ -282,30 +282,27 @@ if df_workbench is not None and not df_workbench.empty:
 
 
     # ==========================================
-    # TABS INITIALIZATION — urutan dari mudah ke advance
+    # TABS INITIALIZATION
     # ==========================================
     st.markdown("---")
     st.subheader("⚙️ Lot Sizing Operational Performance Strategy Modules")
 
-    # MOQ active banner di atas tabs
     if use_moq:
-        st.info(f"🔧 **MOQ Constraint Active ({moq_val} units):** Applied as a post-fulfillment adjustment to all method order quantities. Note: Each method's lot grouping decision is based on original net requirements; MOQ scales up individual orders to meet the minimum threshold, and the resulting surplus inventory is reflected in the Projected On Hand.")
+        st.info(f"🔧 **MOQ Constraint Active ({moq_val} units):** Applied as a post-fulfillment adjustment to all method order quantities.")
 
     tabs_list = st.tabs([
         "📋 L4L", "🎯 EOQ", "⏱️ POQ", "🔒 FOQ", "📅 FPR",
         "💰 IUC", "💸 LTC", "🔍 LUC", "⚖️ PPB", "🚀 Silver-Meal", "🔬 Wagner-Whitin"
     ])
 
-    # FOQ input tetap di dalam tab seperti sebelumnya
     with tabs_list[3]:
         fixed_lot_size = st.number_input("Enter Fixed Order Size (FOQ Multiplier):", min_value=0, value=0, step=5)
 
-    # FPR interval input di dalam tab FPR — default 0 = terkunci
     with tabs_list[4]:
         fpr_interval = st.number_input(
             "FPR Interval (periods):",
             min_value=0, max_value=len(gross_req), value=0, step=1,
-            help="Isi angka > 0 untuk mengaktifkan kalkulasi FPR. Angka ini menentukan berapa periode yang digabung dalam satu window pemesanan."
+            help="Isi angka > 0 untuk mengaktifkan kalkulasi FPR."
         )
 
 
@@ -315,7 +312,6 @@ if df_workbench is not None and not df_workbench.empty:
     def calculate_multi_mrp(demands, s_receipts, setup, hold, init_inv, ss, lt, f_lot, moq_val, fpr_interval, build_trace=True):
         n = len(demands)
         
-        # Net Requirements Matrix
         net_req = []
         prev_inv = init_inv
         for i in range(n):
@@ -328,28 +324,19 @@ if df_workbench is not None and not df_workbench.empty:
                 net_req.append(0)
                 prev_inv = available_stock - demands[i]
 
-        # ==========================================
-        # generate_poh_and_release — sekarang return 3 nilai
-        # MOQ diterapkan di sini: actual_rec = rec setelah MOQ adjustment
-        # POH dan release dihitung dari actual_rec
-        # Cost dihitung dari actual_rec (bukan rec original)
-        # ==========================================
         def generate_poh_and_release(rec_lot, moq_v=0):
-            # Step 1: terapkan MOQ per order
             actual_rec = []
             for i in range(n):
                 raw = rec_lot[i]
                 actual = max(raw, moq_v) if (moq_v > 0 and raw > 0) else raw
                 actual_rec.append(actual)
 
-            # Step 2: hitung POH dari actual_rec
             poh = []
             r_inv = init_inv
             for i in range(n):
                 r_inv += s_receipts[i] + actual_rec[i] - demands[i]
                 poh.append(r_inv)
 
-            # Step 3: release planning dari actual_rec
             rel_lot = [0] * n
             for i in range(n):
                 if actual_rec[i] > 0:
@@ -358,17 +345,13 @@ if df_workbench is not None and not df_workbench.empty:
 
             return poh, rel_lot, actual_rec
 
-        # ==========================================
         # 1. LOT-FOR-LOT (L4L)
-        # ==========================================
         l4l_rec = list(net_req)
         l4l_poh, l4l_rel, l4l_actual = generate_poh_and_release(l4l_rec, moq_val)
         c_l4l_setup = sum(1 for x in l4l_actual if x > 0) * setup
         c_l4l_hold  = sum(max(0, x) for x in l4l_poh) * hold
 
-        # ==========================================
         # 2. LEAST UNIT COST (LUC)
-        # ==========================================
         luc_rec = [0] * n
         luc_trace_logs = []
         idx = 0
@@ -424,11 +407,8 @@ if df_workbench is not None and not df_workbench.empty:
         c_luc_setup = sum(1 for x in luc_actual if x > 0) * setup
         c_luc_hold  = sum(max(0, x) for x in luc_poh) * hold
 
-        # ==========================================
         # 3. ECONOMIC ORDER QUANTITY (EOQ)
-        # ==========================================
         avg_demand_gross = np.mean(demands)
-        total_demand_gross = sum(demands)
         eoq_raw_size = math.sqrt((2 * avg_demand_gross * setup) / hold) if hold > 0 else 0
         eoq_size = math.ceil(eoq_raw_size)
         eoq_rec = [0] * n
@@ -449,9 +429,7 @@ if df_workbench is not None and not df_workbench.empty:
         c_eoq_setup = sum(1 for x in eoq_actual if x > 0) * setup
         c_eoq_hold  = sum(max(0, x) for x in eoq_poh) * hold
 
-        # ==========================================
         # 4. PART PERIOD BALANCING (PPB)
-        # ==========================================
         ppb_rec = [0] * n
         ppb_trace_logs = []
         epp_limit = setup / hold if hold > 0 else float('inf')
@@ -523,9 +501,7 @@ if df_workbench is not None and not df_workbench.empty:
         c_ppb_setup = sum(1 for x in ppb_actual if x > 0) * setup
         c_ppb_hold  = sum(max(0, x) for x in ppb_poh) * hold
 
-        # ==========================================
         # 5. SILVER-MEAL (SM)
-        # ==========================================
         sm_rec = [0] * n
         sm_trace_logs = []
         idx = 0
@@ -579,13 +555,11 @@ if df_workbench is not None and not df_workbench.empty:
             sm_rec[idx] = sum(net_req[idx:best_k+1])
             idx = best_k + 1
             
-        sm_poh, sm_rel, sm_actual = generate_poh_and_release(sm_rec, moq_val)
-        c_sm_setup = sum(1 for x in sm_actual if x > 0) * setup
+        sm_poh, sm_rec, sm_rel = generate_poh_and_release(sm_rec, moq_val)
+        c_sm_setup = sum(1 for x in sm_rec if x > 0) * setup
         c_sm_hold  = sum(max(0, x) for x in sm_poh) * hold
 
-        # ==========================================
         # 6. PERIOD ORDER QUANTITY (POQ)
-        # ==========================================
         poq_raw_interval = eoq_size / avg_demand_gross if avg_demand_gross > 0 and eoq_size > 0 else 1
         poq_interval = max(1, round(poq_raw_interval))
         
@@ -598,13 +572,11 @@ if df_workbench is not None and not df_workbench.empty:
                 poq_rec[i] = total_window_net
             i = window_end
             
-        poq_poh, poq_rel, poq_actual = generate_poh_and_release(poq_rec, moq_val)
-        c_poq_setup = sum(1 for x in poq_actual if x > 0) * setup
+        poq_poh, poq_rec, poq_rel = generate_poh_and_release(poq_rec, moq_val)
+        c_poq_setup = sum(1 for x in poq_rec if x > 0) * setup
         c_poq_hold  = sum(max(0, x) for x in poq_poh) * hold
 
-        # ==========================================
         # 7. FIXED ORDER QUANTITY (FOQ)
-        # ==========================================
         foq_rec = [0] * n
         c_foq_setup, c_foq_hold = 0.0, 0.0
         if f_lot > 0:
@@ -619,14 +591,12 @@ if df_workbench is not None and not df_workbench.empty:
                     else:
                         rem_foq_stok -= net_req[i]
 
-        foq_poh, foq_rel, foq_actual = generate_poh_and_release(foq_rec, moq_val)
+        foq_poh, foq_rec, foq_rel = generate_poh_and_release(foq_rec, moq_val)
         if f_lot > 0:
-            c_foq_setup = sum(1 for x in foq_actual if x > 0) * setup
+            c_foq_setup = sum(1 for x in foq_rec if x > 0) * setup
             c_foq_hold  = sum(max(0, x) for x in foq_poh) * hold
 
-        # ==========================================
         # 8. LEAST TOTAL COST (LTC)
-        # ==========================================
         ltc_rec = [0] * n
         ltc_trace_logs = []
         idx = 0
@@ -674,22 +644,83 @@ if df_workbench is not None and not df_workbench.empty:
             ltc_rec[idx] = sum(net_req[idx:best_k+1])
             idx = best_k + 1
             
-        ltc_poh, ltc_rel, ltc_actual = generate_poh_and_release(ltc_rec, moq_val)
-        c_ltc_setup = sum(1 for x in ltc_actual if x > 0) * setup
+        ltc_poh, ltc_rec, ltc_rel = generate_poh_and_release(ltc_rec, moq_val)
+        c_ltc_setup = sum(1 for x in ltc_rec if x > 0) * setup
         c_ltc_hold  = sum(max(0, x) for x in ltc_poh) * hold
 
-        # [Sisa algoritma IUC, FPR, WW di-bypass atau di-return sesuai standard kebutuhan struktural]
+        # 9. FIXED PERIOD REQUIREMENTS (FPR)
+        fpr_rec = [0] * n
+        if fpr_interval > 0:
+            i = 0
+            while i < n:
+                window_end = min(i + fpr_interval, n)
+                fpr_rec[i] = sum(net_req[i:window_end])
+                i = window_end
+        fpr_poh, fpr_rec, fpr_rel = generate_poh_and_release(fpr_rec, moq_val)
+        c_fpr_setup = sum(1 for x in fpr_rec if x > 0) * setup
+        c_fpr_hold  = sum(max(0, x) for x in fpr_poh) * hold
+
+        # 10. INCREMENTAL UNIT COST (IUC)
+        iuc_rec = [0] * n
+        idx = 0
+        while idx < n:
+            if net_req[idx] == 0:
+                idx += 1
+                continue
+            best_k = idx
+            prev_margin_cost = -1
+            for k in range(idx, n):
+                margin_cost_k = net_req[k] * hold * (k - idx)
+                if prev_margin_cost == -1 or margin_cost_k >= prev_margin_cost:
+                    best_k = k
+                    prev_margin_cost = margin_cost_k
+                else:
+                    break
+            iuc_rec[idx] = sum(net_req[idx:best_k+1])
+            idx = best_k + 1
+        iuc_poh, iuc_rec, iuc_rel = generate_poh_and_release(iuc_rec, moq_val)
+        c_iuc_setup = sum(1 for x in iuc_rec if x > 0) * setup
+        c_iuc_hold  = sum(max(0, x) for x in iuc_poh) * hold
+
+        # 11. WAGNER-WHITIN (WW)
+        ww_rec = [0] * n
+        f = [0.0] * (n + 1)
+        j_best = [0] * (n + 1)
+        for t in range(1, n + 1):
+            min_val = float('inf')
+            best_j = 0
+            for j in range(1, t + 1):
+                h_cost = 0
+                for k in range(j, t + 1):
+                    h_cost += net_req[k - 1] * hold * (k - j)
+                cost_j_t = f[j - 1] + setup + h_cost
+                if cost_j_t < min_val:
+                    min_val = cost_j_t
+                    best_j = j
+            f[t] = min_val
+            j_best[t] = best_j
+
+        t_curr = n
+        while t_curr > 0:
+            j_start = j_best[t_curr]
+            qty = sum(net_req[j_start-1:t_curr])
+            ww_rec[j_start - 1] = qty
+            t_curr = j_start - 1
+        ww_poh, ww_rec, ww_rel = generate_poh_and_release(ww_rec, moq_val)
+        c_ww_setup = sum(1 for x in ww_rec if x > 0) * setup
+        c_ww_hold  = sum(max(0, x) for x in ww_poh) * hold
+
         return (l4l_poh, l4l_actual, l4l_rel, c_l4l_setup + c_l4l_hold,
                 eoq_poh, eoq_actual, eoq_rel, c_eoq_setup + c_eoq_hold,
-                poq_poh, poq_actual, poq_rel, c_poq_setup + c_poq_hold,
-                foq_poh, foq_actual, foq_rel, c_foq_setup + c_foq_hold,
-                l4l_poh, l4l_actual, l4l_rel, 0.0, # FPR placeholder
-                l4l_poh, l4l_actual, l4l_rel, 0.0, # IUC placeholder
-                ltc_poh, ltc_actual, ltc_rel, c_ltc_setup + c_ltc_hold,
+                poq_poh, poq_rec, poq_rel, c_poq_setup + c_poq_hold,
+                foq_poh, foq_rec, foq_rel, c_foq_setup + c_foq_hold,
+                fpr_poh, fpr_rec, fpr_rel, c_fpr_setup + c_fpr_hold, 
+                iuc_poh, iuc_rec, iuc_rel, c_iuc_setup + c_iuc_hold, 
+                ltc_poh, ltc_rec, ltc_rel, c_ltc_setup + c_ltc_hold,
                 luc_poh, luc_actual, luc_rel, c_luc_setup + c_luc_hold,
                 ppb_poh, ppb_actual, ppb_rel, c_ppb_setup + c_ppb_hold,
-                sm_poh, sm_actual, sm_rel, c_sm_setup + c_sm_hold,
-                l4l_poh, l4l_actual, l4l_rel, 0.0, # WW placeholder
+                sm_poh, sm_rec, sm_rel, c_sm_setup + c_sm_hold,
+                ww_poh, ww_rec, ww_rel, c_ww_setup + c_ww_hold,
                 net_req, luc_trace_logs, ppb_trace_logs, sm_trace_logs, ltc_trace_logs, poq_interval)
 
     # Eksekusi kalkulasi mesin inti
@@ -730,6 +761,7 @@ if df_workbench is not None and not df_workbench.empty:
         render_mrp_grid(eoq_poh, eoq_rec, eoq_rel)
     with tabs_list[2]:
         st.markdown("### ⏱️ Period Order Quantity (POQ) Matrix")
+        st.info(f"💡 Calculated Time Interval Frequency: **{poq_int} periods**")
         render_mrp_grid(poq_poh, poq_rec, poq_rel)
     with tabs_list[3]:
         st.markdown("### 🔒 Fixed Order Quantity (FOQ) Matrix")
@@ -755,3 +787,59 @@ if df_workbench is not None and not df_workbench.empty:
     with tabs_list[10]:
         st.markdown("### 🔬 Wagner-Whitin (WW) Matrix")
         render_mrp_grid(ww_poh, ww_rec, ww_rel)
+
+
+    # ==========================================
+    # 5. PERFORMANCE COMPARISON ANALYSIS WORKBENCH
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📊 Strategic Strategy Performance Evaluation")
+
+    cost_data = {
+        'Strategy Module': [
+            'Lot-for-Lot (L4L)', 'Economic Order Quantity (EOQ)', 'Period Order Quantity (POQ)',
+            'Fixed Order Quantity (FOQ)', 'Fixed Period Requirements (FPR)', 'Incremental Unit Cost (IUC)',
+            'Least Total Cost (LTC)', 'Least Unit Cost (LUC)', 'Part Period Balancing (PPB)',
+            'Silver-Meal (SM)', 'Wagner-Whitin (WW)'
+        ],
+        'Total Operational Cost (Rp)': [
+            total_l4l, total_eoq, total_poq, total_foq, total_fpr, total_iuc,
+            total_ltc, total_luc, total_ppb, total_sm, total_ww
+        ]
+    }
+    df_comparison = pd.DataFrame(cost_data)
+    df_comparison['Rank'] = df_comparison['Total Operational Cost (Rp)'].rank(method='min', ascending=True).astype(int)
+    df_comparison = df_comparison.sort_values(by='Total Operational Cost (Rp)', ascending=True).reset_index(drop=True)
+
+    col_tbl, col_cht = st.columns([1, 1])
+    with col_tbl:
+        st.markdown("##### 🏆 Strategy Efficiency Leaderboard:")
+        st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+        
+    with col_cht:
+        st.markdown("##### 📊 Cost Distribution Analysis Chart:")
+        fig, ax = plt.subplots(figsize=(6, 3.6))
+        fig.patch.set_facecolor('#faf8f2')
+        ax.set_facecolor('#ffffff')
+        
+        colors = ['#6a0708' if i == 0 else '#b71c1c' if i < 4 else '#e0dbcd' for i in range(len(df_comparison))]
+        bars = ax.barh(df_comparison['Strategy Module'], df_comparison['Total Operational Cost (Rp)'], color=colors, height=0.6)
+        
+        ax.invert_yaxis()
+        ax.set_xlabel('Total Financial Burden (Rp)', fontsize=9, fontweight='bold', color='#111111')
+        ax.tick_params(axis='both', labelsize=8, colors='#111111')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#e0dbcd')
+        ax.spines['bottom'].set_color('#e0dbcd')
+        ax.grid(axis='x', linestyle='--', alpha=0.5, color='#e0dbcd')
+        
+        for bar in bars:
+            width = bar.get_width()
+            ax.text(width + (max(df_comparison['Total Operational Cost (Rp)']) * 0.01), 
+                    bar.get_y() + bar.get_height()/2, 
+                    f"Rp {width:,.0f}", 
+                    va='center', ha='left', fontsize=8, fontweight='bold', color='#6a0708')
+            
+        plt.tight_layout()
+        st.pyplot(fig)
